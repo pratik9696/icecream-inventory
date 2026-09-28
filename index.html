@@ -278,10 +278,11 @@ async function load() {
 
 function render() {
   const t = today();
-  $("pList").innerHTML = state.products.length ? state.products.map(p => {
+  $("pList").innerHTML = state.products.length ? state.products.map((p, i) => {
     const days = daysLeft(p.expiry, t);
     const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
-    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · expires ${niceDate(p.expiry)}</small></div>${tag}</div>`;
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · expires ${niceDate(p.expiry)}</small></div>
+     <div class="row-end">${tag}<button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this product">✕</button></div></div>`;
   }).join("") : '<div class="empty">No products yet. Add your first one above.</div>';
 
   recentSorted = state.recent
@@ -320,6 +321,20 @@ async function deleteCount(r) {
 $("cList").addEventListener("click", e => {
   const b = e.target.closest(".del-btn");
   if (b) deleteCount(recentSorted[+b.dataset.idx]);
+});
+
+async function deleteProduct(p) {
+  const ok = await askConfirm(`Delete this product?\n\n${p.product} · ${p.type}\nExpires ${niceDate(p.expiry)}`);
+  if (!ok) return;
+  try {
+    const d = await api({ action: "deleteProduct", ...p });
+    toast(d.message || "Deleted");
+    d.products ? applyData(d) : await load();
+  } catch (e) { toast(e.message, true); }
+}
+$("pList").addEventListener("click", e => {
+  const b = e.target.closest(".del-btn");
+  if (b) deleteProduct(state.products[+b.dataset.idx]);
 });
 
 const daysLeft = (expiry, t) => Math.round((new Date(expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
