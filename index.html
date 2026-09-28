@@ -67,6 +67,30 @@
   .cal-foot{display:flex;justify-content:space-between;margin-top:8px}
   .cal-foot button{border:0;background:transparent;color:var(--green-dark);font:600 15px system-ui,sans-serif;padding:10px 8px;cursor:pointer}
   @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+
+  /* dashboard */
+  .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+  .stat-tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .stat-tile .stat-label{font-size:13px;color:var(--muted);font-weight:600}
+  .stat-tile .stat-value{font:600 30px "Fredoka",system-ui,sans-serif;color:var(--green-dark);margin-top:2px}
+  .stat-tile .stat-value.warn{color:var(--warn)} .stat-tile .stat-value.bad{color:var(--bad)}
+  .dash-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px}
+  .status-bar{display:flex;height:20px;border-radius:10px;overflow:hidden;gap:2px;background:var(--bg)}
+  .status-bar span{display:block;height:100%;min-width:0}
+  .status-bar .seg-ok{background:var(--green)}
+  .status-bar .seg-soon{background:var(--warn)}
+  .status-bar .seg-exp{background:var(--bad)}
+  .status-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:13px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  .dot.ok{background:var(--green)} .dot.soon{background:var(--warn)} .dot.exp{background:var(--bad)}
+  .bar-row{display:grid;grid-template-columns:100px 1fr 34px;align-items:center;gap:8px;margin-bottom:10px}
+  .bar-row:last-child{margin-bottom:0}
+  .bar-row .bar-label{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-track{height:18px;background:var(--bg);border-radius:4px}
+  .bar-fill{height:100%;border-radius:0 4px 4px 0;background:var(--green)}
+  .bar-fill.pink{background:var(--pink)}
+  .bar-row .bar-value{font-size:13px;font-weight:600;text-align:right}
+  .type-key{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;font-size:13px}
 </style>
 </head>
 <body>
@@ -91,6 +115,7 @@
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="true" data-tab="counts">Daily count</button>
     <button role="tab" aria-selected="false" data-tab="products">Expiry date</button>
+    <button role="tab" aria-selected="false" data-tab="dashboard">Dashboard</button>
   </div>
 
   <!-- PRODUCTS -->
@@ -125,6 +150,40 @@
       <button class="go" type="submit">Save count</button>
     </form>
     <div class="list"><h2>Recent counts</h2><div id="cList"><div class="empty">Loading…</div></div></div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section id="dashboard">
+    <div class="stats-grid">
+      <div class="stat-tile"><div class="stat-label">Flavours tracked</div><div class="stat-value" id="statFlavours">0</div></div>
+      <div class="stat-tile"><div class="stat-label">Units in stock</div><div class="stat-value" id="statUnits">0</div></div>
+      <div class="stat-tile"><div class="stat-label">Expiring ≤7 days</div><div class="stat-value" id="statSoon">0</div></div>
+      <div class="stat-tile"><div class="stat-label">Expired</div><div class="stat-value" id="statExpired">0</div></div>
+    </div>
+
+    <div class="dash-card">
+      <h2>Expiry status</h2>
+      <div id="statusBarWrap">
+        <div class="status-bar" id="statusBar"></div>
+        <div class="status-legend" id="statusLegend"></div>
+      </div>
+    </div>
+
+    <div class="dash-card">
+      <h2>Expiring soonest</h2>
+      <div id="attnList"><div class="empty">No products yet.</div></div>
+    </div>
+
+    <div class="dash-card">
+      <h2>Units by flavour</h2>
+      <div id="flavourBars"><div class="empty">No products yet.</div></div>
+    </div>
+
+    <div class="dash-card">
+      <h2>Units by pack type</h2>
+      <div class="type-key" id="typeKey"></div>
+      <div id="typeBars"><div class="empty">No products yet.</div></div>
+    </div>
   </section>
 </main>
 
@@ -195,7 +254,7 @@ async function load() {
 function render() {
   const t = today();
   $("pList").innerHTML = state.products.length ? state.products.map(p => {
-    const days = Math.round((new Date(p.expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
+    const days = daysLeft(p.expiry, t);
     const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
     return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · expires ${niceDate(p.expiry)}</small></div>${tag}</div>`;
   }).join("") : '<div class="empty">No products yet. Add your first one above.</div>';
@@ -203,6 +262,64 @@ function render() {
   $("cList").innerHTML = state.recent.length ? state.recent.map(r =>
     `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · ${niceDate(r.date)}</small></div><span class="tag">${esc(r.count)}</span></div>`
   ).join("") : '<div class="empty">No counts yet.</div>';
+
+  renderDashboard();
+}
+
+const daysLeft = (expiry, t) => Math.round((new Date(expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
+
+function barRows(items, colorFn) {
+  const max = Math.max(1, ...items.map(([, v]) => v));
+  return items.map(([label, val], i) => {
+    const cls = colorFn ? colorFn(i) : "";
+    return `
+    <div class="bar-row">
+      <div class="bar-label">${esc(label)}</div>
+      <div class="bar-track"><div class="bar-fill${cls ? " " + cls : ""}" style="width:${Math.max(4, val / max * 100)}%"></div></div>
+      <div class="bar-value">${val}</div>
+    </div>`;
+  }).join("");
+}
+
+function sumBy(arr, keyFn) {
+  const m = new Map();
+  arr.forEach(p => { const k = keyFn(p); m.set(k, (m.get(k) || 0) + (Number(p.count) || 1)); });
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function renderDashboard() {
+  const t = today();
+  const products = state.products;
+
+  $("statFlavours").textContent = products.length;
+  $("statUnits").textContent = products.reduce((s, p) => s + (Number(p.count) || 1), 0);
+
+  let ok = 0, soon = 0, exp = 0;
+  products.forEach(p => { const d = daysLeft(p.expiry, t); if (d < 0) exp++; else if (d <= 7) soon++; else ok++; });
+  $("statSoon").textContent = soon; $("statSoon").classList.toggle("warn", soon > 0);
+  $("statExpired").textContent = exp; $("statExpired").classList.toggle("bad", exp > 0);
+
+  const seg = (n, cls) => n ? `<span class="seg-${cls}" style="flex:${n} 0 0"></span>` : "";
+  $("statusBar").innerHTML = products.length ? seg(ok, "ok") + seg(soon, "soon") + seg(exp, "exp") : "";
+  $("statusLegend").innerHTML = products.length ? `
+    <span><i class="dot ok"></i>OK · ${ok}</span>
+    <span><i class="dot soon"></i>Expiring soon · ${soon}</span>
+    <span><i class="dot exp"></i>Expired · ${exp}</span>` : '<div class="empty">No products yet.</div>';
+
+  const soonest = [...products].sort((a, b) => daysLeft(a.expiry, t) - daysLeft(b.expiry, t)).slice(0, 3);
+  $("attnList").innerHTML = soonest.length ? soonest.map(p => {
+    const days = daysLeft(p.expiry, t);
+    const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(p.expiry)}</small></div>${tag}</div>`;
+  }).join("") : '<div class="empty">No products yet.</div>';
+
+  const byFlavour = sumBy(products, p => p.product).slice(0, 8);
+  $("flavourBars").innerHTML = byFlavour.length ? barRows(byFlavour) : '<div class="empty">No products yet.</div>';
+
+  const byType = sumBy(products, p => p.type);
+  $("typeKey").innerHTML = byType.length ? byType.map(([label], i) =>
+    `<span><i class="dot" style="background:var(${i % 2 ? "--pink" : "--green"})"></i>${esc(label)}</span>`).join("") : "";
+  $("typeBars").innerHTML = byType.length ? barRows(byType, i => i % 2 ? "pink" : "") : '<div class="empty">No products yet.</div>';
 }
 
 function fillSelects() {
