@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2e8b3d">
+<title>Iceano Inventory</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ccircle cx=%2750%27 cy=%2750%27 r=%2748%27 fill=%27%232e8b3d%27/%3E%3Ctext x=%2750%27 y=%2770%27 font-size=%2760%27 text-anchor=%27middle%27%3E%F0%9F%8D%A6%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#eef1ec; --card:#ffffff; --ink:#2a2a26; --muted:#6f7169;
+    --green:#2e8b3d; --green-dark:#1d6a2b; --green-soft:#dcefdf;
+    --pink:#e0367f; --brown:#b9722f; --cherry:#e8402a;
+    --line:#dcdfd8; --warn:#a86a00; --bad:#c62f3f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  header{background:#fff;text-align:center;padding:10px 16px 12px;border-bottom:5px solid var(--green)}
+  .logo{width:min(64vw,230px);height:auto;display:block;margin:0 auto}
+  header p{margin:2px 0 0;color:var(--muted);font-size:14px}
+  header a{color:var(--green-dark);font-size:14px;font-weight:600}
+  main{max-width:560px;margin:0 auto;padding:14px}
+  .tabs{display:flex;gap:8px;margin:0 0 14px}
+  .tabs button{flex:1;padding:12px;border:2px solid var(--green);background:#fff;color:var(--green-dark);
+       border-radius:999px;font:600 16px "Fredoka",system-ui,sans-serif;cursor:pointer}
+  .tabs button[aria-selected="true"]{background:var(--green);color:#fff}
+  section{display:none} section.on{display:block}
+  form,.list{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px}
+  label{display:block;font-weight:600;margin:0 0 6px;font-size:14px}
+  .field{margin-bottom:14px}
+  input,select{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;
+       font:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus,button:focus-visible{outline:3px solid #f6a9c9;outline-offset:1px;border-color:var(--pink)}
+  .go{width:100%;min-height:50px;border:0;border-radius:999px;background:var(--green);color:#fff;
+       font:600 18px "Fredoka",system-ui,sans-serif;cursor:pointer}
+  .go:active{background:var(--green-dark)} .go[disabled]{opacity:.6}
+  h2{font:600 19px "Fredoka",system-ui,sans-serif;margin:0 0 10px;color:var(--green-dark)}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:0}
+  .row b{display:block} .row small{color:var(--muted)}
+  .tag{align-self:center;font-size:13px;font-weight:600;border-radius:99px;padding:3px 10px;white-space:nowrap;background:var(--green-soft);color:var(--green-dark)}
+  .tag.soon{background:#fdebc4;color:var(--warn)} .tag.exp{background:#fbd3d8;color:var(--bad)}
+  .empty{color:var(--muted);padding:6px 0}
+  #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);
+       background:var(--green-dark);color:#fff;padding:12px 18px;border-radius:14px;max-width:90%;opacity:0;pointer-events:none;transition:opacity .2s}
+  #toast.show{opacity:1} #toast.err{background:var(--bad)}
+  .setup{background:#fff7dd;border:1px solid #f0d98a;border-radius:12px;padding:12px;margin-bottom:14px;display:none}
+  [hidden]{display:none!important}
+  .datebox{cursor:pointer}
+  .cal-back{position:fixed;inset:0;background:rgba(20,40,24,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+  .cal{background:#fff;border-radius:20px;padding:14px;width:min(100%,340px);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .cal-head b{font:600 17px "Fredoka",system-ui,sans-serif;color:var(--green-dark)}
+  .cal-nav{display:flex;gap:2px}
+  .cal-nav button{width:40px;height:40px;border:0;background:transparent;border-radius:10px;font-size:20px;color:var(--green-dark);cursor:pointer}
+  .cal-nav button:active{background:var(--green-soft)}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+  .cal-grid span{font-size:12px;color:var(--muted);padding:4px 0}
+  .cal-grid button{height:42px;border:0;border-radius:50%;background:transparent;font:inherit;color:var(--ink);cursor:pointer}
+  .cal-grid button:active{background:var(--green-soft)}
+  .cal-grid button.today{box-shadow:inset 0 0 0 2px var(--pink)}
+  .cal-grid button.sel{background:var(--green);color:#fff;font-weight:600}
+  .cal-foot{display:flex;justify-content:space-between;margin-top:8px}
+  .cal-foot button{border:0;background:transparent;color:var(--green-dark);font:600 15px system-ui,sans-serif;padding:10px 8px;cursor:pointer}
+  @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="sr">Iceano Natural Ice-Cream inventory</h1>
+  <svg class="logo" viewBox="0 -14 300 224" role="img" aria-label="Iceano Natural Ice-Cream">
+    <ellipse cx="150" cy="135" rx="140" ry="62" fill="#2e8b3d" stroke="#124a1c" stroke-width="3"/>
+    <polygon points="112,88 188,88 150,174" fill="#b9722f" stroke="#6b3d14" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M106 88 C98 48 122 22 150 22 C178 22 202 48 194 88 C188 96 182 90 178 82 C174 100 162 100 160 84 C156 92 146 94 142 84 C138 96 124 98 122 84 C118 94 110 96 106 88 Z" fill="#fff" stroke="#e0367f" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M152 8 C156 -2 164 -7 171 -9" fill="none" stroke="#2e8b3d" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="150" cy="18" r="13" fill="#e8402a"/>
+    <text x="150" y="152" text-anchor="middle" font-family="Fredoka,system-ui,sans-serif" font-weight="600" font-size="58" fill="#fff" textLength="236" lengthAdjust="spacingAndGlyphs">ICEANO</text>
+    <text x="150" y="187" text-anchor="middle" font-family="system-ui,sans-serif" font-style="italic" font-size="15" fill="#fff">Natural Ice-Cream</text>
+  </svg>
+  <p>Stock &amp; expiry tracker</p>
+  <a id="sheetLink" href="#" target="_blank" rel="noopener" hidden>Open Google Sheet dashboard</a>
+</header>
+
+<main>
+  <div class="setup" id="setupMsg">Set <code>SCRIPT_URL</code> at the top of index.html to your Apps Script web app URL.</div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="counts">Daily count</button>
+    <button role="tab" aria-selected="false" data-tab="products">Expiry date</button>
+  </div>
+
+  <!-- PRODUCTS -->
+  <section id="products">
+    <form id="pForm">
+      <h2>Add product</h2>
+      <div class="field"><label for="pName">Flavour</label>
+        <select id="pName" required></select></div>
+      <div class="field"><label for="pType">Type</label>
+        <select id="pType" required></select></div>
+      <div class="field"><label for="pExp">Expiry date</label>
+        <input id="pExp" class="datebox" readonly inputmode="none" autocomplete="off" placeholder="Tap to pick a date"></div>
+      <div class="field"><label for="pCount">Count (optional)</label>
+        <input id="pCount" type="number" inputmode="numeric" min="1" step="1" placeholder="1 if left empty"></div>
+      <button class="go" type="submit">Save product</button>
+    </form>
+    <div class="list"><h2>All products</h2><div id="pList"><div class="empty">Loading…</div></div></div>
+  </section>
+
+  <!-- COUNTS -->
+  <section id="counts" class="on">
+    <form id="cForm">
+      <h2>Record stock count</h2>
+      <div class="field"><label for="cProd">Flavour</label>
+        <select id="cProd" required></select></div>
+      <div class="field"><label for="cType">Type</label>
+        <select id="cType" required></select></div>
+      <div class="field"><label for="cCount">Count</label>
+        <input id="cCount" type="number" inputmode="numeric" min="0" step="1" required></div>
+      <div class="field"><label for="cDate">Count date</label>
+        <input id="cDate" class="datebox" readonly inputmode="none" autocomplete="off" placeholder="Tap to pick a date"></div>
+      <button class="go" type="submit">Save count</button>
+    </form>
+    <div class="list"><h2>Recent counts</h2><div id="cList"><div class="empty">Loading…</div></div></div>
+  </section>
+</main>
+
+<div class="cal-back" id="calBack" hidden>
+  <div class="cal" role="dialog" aria-modal="true" aria-label="Pick a date">
+    <div class="cal-head">
+      <b id="calTitle"></b>
+      <div class="cal-nav">
+        <button type="button" data-step="-12" aria-label="Previous year">&laquo;</button>
+        <button type="button" data-step="-1" aria-label="Previous month">&lsaquo;</button>
+        <button type="button" data-step="1" aria-label="Next month">&rsaquo;</button>
+        <button type="button" data-step="12" aria-label="Next year">&raquo;</button>
+      </div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-foot"><button type="button" id="calToday">Today</button><button type="button" id="calCancel">Cancel</button></div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+// ====== CONFIG: paste your values here ======
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzgs9xmtHpxbb11V8_vit02XEbzTYLtBx_KPAL8mpkjFAtk5ox2zU16vwAKYbAGx7hAuQ/exec";
+const SHEET_URL  = "https://docs.google.com/spreadsheets/d/1TgpZx72DqK4LxVSYbDy3EK107W2WygoIn75dOQIHNMk/edit?gid=1193501439#gid=1193501439";   // optional: link to your Google Sheet, shown in the header
+// ============================================
+
+const $ = id => document.getElementById(id);
+const FLAVOURS = ["Sitafal","Mango","Tender Coconut","Strawberry","Chilli Guava","Jamun","Chikoo","Jackfruits","Blue Berry","Black Currant","Lychee","Candied Fruits","Muskmelon","Roasted Almond","Rajbhog","Anjir","Coffee Walnut","Choco Almond","Chocolate","Chocochips","Dalgona Coffee","Vanilla"];
+const TYPES = ["Mini Pack","Family Pack"];
+let state = { flavours: FLAVOURS, types: TYPES, products: [], recent: [] };
+let key = localStorage.getItem("iceKey") || "";
+
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const niceDate = s => s ? new Date(s + "T00:00").toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function toast(msg, err) {
+  const t = $("toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", 3200);
+}
+
+async function api(payload) {
+  if (SCRIPT_URL.startsWith("PASTE")) { $("setupMsg").style.display = "block"; throw new Error("SCRIPT_URL not set"); }
+  const opts = payload ? { method: "POST", body: JSON.stringify({ ...payload, key }) } : {};  // text/plain avoids CORS preflight
+  const url = payload ? SCRIPT_URL : SCRIPT_URL + "?key=" + encodeURIComponent(key);
+  const res = await fetch(url, opts);
+  const data = await res.json();
+  if (!data.ok) {
+    if (data.error === "unauthorized") {
+      const k = prompt("Enter passcode"); if (k === null) throw new Error("Passcode needed");
+      key = k; localStorage.setItem("iceKey", k); return api(payload);
+    }
+    throw new Error(data.error);
+  }
+  return data;
+}
+
+async function load() {
+  try {
+    const d = await api();
+    state = { ...state, ...d };
+    fillSelects();
+    render();
+  } catch (e) { toast(e.message, true); $("pList").innerHTML = $("cList").innerHTML = '<div class="empty">Could not load data.</div>'; }
+}
+
+function render() {
+  const t = today();
+  $("pList").innerHTML = state.products.length ? state.products.map(p => {
+    const days = Math.round((new Date(p.expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
+    const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · expires ${niceDate(p.expiry)}</small></div>${tag}</div>`;
+  }).join("") : '<div class="empty">No products yet. Add your first one above.</div>';
+
+  $("cList").innerHTML = state.recent.length ? state.recent.map(r =>
+    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · ${niceDate(r.date)}</small></div><span class="tag">${esc(r.count)}</span></div>`
+  ).join("") : '<div class="empty">No counts yet.</div>';
+}
+
+function fillSelects() {
+  const opts = (arr, ph) => `<option value="">${ph}</option>` + arr.map(x => `<option>${esc(x)}</option>`).join("");
+  [["pName", "Select flavour", state.flavours], ["cProd", "Select flavour", state.flavours],
+   ["pType", "Select type", state.types], ["cType", "Select type", state.types]].forEach(([id, ph, arr]) => {
+    const el = $(id), v = el.value; el.innerHTML = opts(arr, ph); el.value = v;
+  });
+}
+
+async function submit(form, payload, okReset) {
+  const btn = form.querySelector("button"); btn.disabled = true;
+  try { const d = await api(payload); toast(d.message); okReset(); await load(); }
+  catch (e) { toast(e.message, true); }
+  btn.disabled = false;
+}
+
+// ---- tap-a-day calendar: picking a date selects it and closes immediately ----
+const pad = n => String(n).padStart(2, "0");
+const iso = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+const getDate = id => $(id).dataset.iso || "";
+function setDate(id, v) { $(id).dataset.iso = v; $(id).value = v ? niceDate(v) : ""; }
+const cal = { target: null, y: 0, m: 0 };
+
+function openCal(id) {
+  const [y, m] = (getDate(id) || today()).split("-");
+  Object.assign(cal, { target: id, y: +y, m: +m - 1 });
+  drawCal(); $("calBack").hidden = false;
+}
+function closeCal() { $("calBack").hidden = true; if (cal.target) $(cal.target).focus(); }
+function pick(v) { setDate(cal.target, v); closeCal(); }
+
+function drawCal() {
+  $("calTitle").textContent = new Date(cal.y, cal.m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const first = new Date(cal.y, cal.m, 1).getDay(), days = new Date(cal.y, cal.m + 1, 0).getDate();
+  const sel = getDate(cal.target), t = today();
+  let html = ["S", "M", "T", "W", "T", "F", "S"].map(d => `<span>${d}</span>`).join("") + "<i></i>".repeat(first);
+  for (let d = 1; d <= days; d++) {
+    const v = iso(cal.y, cal.m, d);
+    html += `<button type="button" data-d="${v}" class="${v === sel ? "sel" : v === t ? "today" : ""}">${d}</button>`;
+  }
+  $("calGrid").innerHTML = html;
+}
+$("calGrid").addEventListener("click", e => { const b = e.target.closest("button[data-d]"); if (b) pick(b.dataset.d); });
+document.querySelectorAll(".cal-nav button").forEach(b => b.addEventListener("click", () => {
+  const d = new Date(cal.y, cal.m + +b.dataset.step, 1); cal.y = d.getFullYear(); cal.m = d.getMonth(); drawCal();
+}));
+$("calToday").addEventListener("click", () => pick(today()));
+$("calCancel").addEventListener("click", closeCal);
+$("calBack").addEventListener("click", e => { if (e.target === $("calBack")) closeCal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("calBack").hidden) closeCal(); });
+["pExp", "cDate"].forEach(id => $(id).addEventListener("click", () => openCal(id)));
+
+$("pForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!getDate("pExp")) return toast("Pick an expiry date", true);
+  submit(e.target, { action: "addProduct", product: $("pName").value, type: $("pType").value, expiry: getDate("pExp"), count: $("pCount").value },
+    () => { $("pName").value = ""; $("pType").value = ""; setDate("pExp", ""); $("pCount").value = ""; });
+});
+
+$("cForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!getDate("cDate")) return toast("Pick a count date", true);
+  submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, count: $("cCount").value, date: getDate("cDate") },
+    () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; });
+});
+
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
+}));
+
+setDate("cDate", today());
+fillSelects();
+if (SHEET_URL) { $("sheetLink").href = SHEET_URL; $("sheetLink").hidden = false; }
+load();
+</script>
+</body>
+</html>
