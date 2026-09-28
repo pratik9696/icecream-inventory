@@ -22,7 +22,6 @@
   header{background:#fff;text-align:center;padding:10px 16px 12px;border-bottom:5px solid var(--green)}
   .logo{width:min(64vw,230px);height:auto;display:block;margin:0 auto}
   header p{margin:2px 0 0;color:var(--muted);font-size:14px}
-  header a{color:var(--green-dark);font-size:14px;font-weight:600}
   main{max-width:560px;margin:0 auto;padding:14px}
   .tabs{display:flex;gap:8px;margin:0 0 14px}
   .tabs button{flex:1;padding:12px;border:2px solid var(--green);background:#fff;color:var(--green-dark);
@@ -44,6 +43,10 @@
   .row b{display:block} .row small{color:var(--muted)}
   .tag{align-self:center;font-size:13px;font-weight:600;border-radius:99px;padding:3px 10px;white-space:nowrap;background:var(--green-soft);color:var(--green-dark)}
   .tag.soon{background:#fdebc4;color:var(--warn)} .tag.exp{background:#fbd3d8;color:var(--bad)}
+  .row-end{display:flex;align-items:center;gap:8px}
+  .del-btn{align-self:center;border:0;background:transparent;color:var(--bad);font-size:17px;line-height:1;
+       width:34px;height:34px;border-radius:50%;cursor:pointer;flex:none}
+  .del-btn:active{background:#fbd3d8}
   .empty{color:var(--muted);padding:6px 0}
   #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);
        background:var(--green-dark);color:#fff;padding:12px 18px;border-radius:14px;max-width:90%;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -67,6 +70,13 @@
   .cal-foot{display:flex;justify-content:space-between;margin-top:8px}
   .cal-foot button{border:0;background:transparent;color:var(--green-dark);font:600 15px system-ui,sans-serif;padding:10px 8px;cursor:pointer}
   @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+
+  .confirm-box{background:#fff;border-radius:20px;padding:18px;width:min(100%,340px);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  .confirm-box p{margin:0 0 16px;white-space:pre-line;line-height:1.5}
+  .confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+  .confirm-actions button{border:0;border-radius:999px;font:600 15px "Fredoka",system-ui,sans-serif;padding:10px 18px;cursor:pointer}
+  #confirmCancel{background:var(--bg);color:var(--ink)}
+  #confirmOk.danger{background:var(--bad);color:#fff}
 
   /* dashboard */
   .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
@@ -97,16 +107,20 @@
 <header>
   <h1 class="sr">Iceano Natural Ice-Cream inventory</h1>
   <svg class="logo" viewBox="0 -14 300 224" role="img" aria-label="Iceano Natural Ice-Cream">
+    <defs>
+      <path id="natCurve" d="M65,174.2 A140,62 0 0 0 235,174.2" fill="none"/>
+    </defs>
     <ellipse cx="150" cy="135" rx="140" ry="62" fill="#2e8b3d" stroke="#124a1c" stroke-width="3"/>
     <polygon points="112,88 188,88 150,174" fill="#b9722f" stroke="#6b3d14" stroke-width="3" stroke-linejoin="round"/>
     <path d="M106 88 C98 48 122 22 150 22 C178 22 202 48 194 88 C188 96 182 90 178 82 C174 100 162 100 160 84 C156 92 146 94 142 84 C138 96 124 98 122 84 C118 94 110 96 106 88 Z" fill="#fff" stroke="#e0367f" stroke-width="3" stroke-linejoin="round"/>
     <path d="M152 8 C156 -2 164 -7 171 -9" fill="none" stroke="#2e8b3d" stroke-width="3.5" stroke-linecap="round"/>
     <circle cx="150" cy="18" r="13" fill="#e8402a"/>
     <text x="150" y="152" text-anchor="middle" font-family="Fredoka,system-ui,sans-serif" font-weight="600" font-size="58" fill="#fff" textLength="236" lengthAdjust="spacingAndGlyphs">ICEANO</text>
-    <text x="150" y="187" text-anchor="middle" font-family="system-ui,sans-serif" font-style="italic" font-size="15" fill="#fff">Natural Ice-Cream</text>
+    <text font-family="system-ui,sans-serif" font-style="italic" font-size="15" fill="#fff">
+      <textPath href="#natCurve" startOffset="50%" text-anchor="middle">Natural Ice-Cream</textPath>
+    </text>
   </svg>
   <p>Stock &amp; expiry tracker</p>
-  <a id="sheetLink" href="#" target="_blank" rel="noopener" hidden>Open Google Sheet dashboard</a>
 </header>
 
 <main>
@@ -203,12 +217,21 @@
   </div>
 </div>
 
+<div class="cal-back" id="confirmBack" hidden>
+  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmMsg">
+    <p id="confirmMsg"></p>
+    <div class="confirm-actions">
+      <button type="button" id="confirmCancel">Cancel</button>
+      <button type="button" id="confirmOk" class="danger">Delete</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 // ====== CONFIG: paste your values here ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzgs9xmtHpxbb11V8_vit02XEbzTYLtBx_KPAL8mpkjFAtk5ox2zU16vwAKYbAGx7hAuQ/exec";
-const SHEET_URL  = "https://docs.google.com/spreadsheets/d/1TgpZx72DqK4LxVSYbDy3EK107W2WygoIn75dOQIHNMk/edit?gid=1193501439#gid=1193501439";   // optional: link to your Google Sheet, shown in the header
 // ============================================
 
 const $ = id => document.getElementById(id);
@@ -259,12 +282,40 @@ function render() {
     return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · expires ${niceDate(p.expiry)}</small></div>${tag}</div>`;
   }).join("") : '<div class="empty">No products yet. Add your first one above.</div>';
 
-  $("cList").innerHTML = state.recent.length ? state.recent.map(r =>
-    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · ${niceDate(r.date)}</small></div><span class="tag">${esc(r.count)}</span></div>`
+  recentSorted = state.recent
+    .map((r, i) => [r, i])
+    .sort((a, b) => (b[0].date || "").localeCompare(a[0].date || "") || b[1] - a[1])
+    .map(([r]) => r);
+  $("cList").innerHTML = recentSorted.length ? recentSorted.map((r, i) =>
+    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · ${niceDate(r.date)}</small></div>
+     <div class="row-end"><span class="tag">${esc(r.count)}</span><button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this count">✕</button></div></div>`
   ).join("") : '<div class="empty">No counts yet.</div>';
 
   renderDashboard();
 }
+let recentSorted = [];
+
+function askConfirm(msg) {
+  return new Promise(resolve => {
+    $("confirmMsg").textContent = msg;
+    $("confirmBack").hidden = false;
+    const done = v => { $("confirmBack").hidden = true; $("confirmOk").removeEventListener("click", onOk); $("confirmCancel").removeEventListener("click", onCancel); resolve(v); };
+    const onOk = () => done(true), onCancel = () => done(false);
+    $("confirmOk").addEventListener("click", onOk);
+    $("confirmCancel").addEventListener("click", onCancel);
+  });
+}
+
+async function deleteCount(r) {
+  const ok = await askConfirm(`Delete this count?\n\n${r.product} · ${r.type}\n${niceDate(r.date)} · ${r.count} units`);
+  if (!ok) return;
+  try { const d = await api({ action: "deleteCount", ...r }); toast(d.message || "Deleted"); await load(); }
+  catch (e) { toast(e.message, true); }
+}
+$("cList").addEventListener("click", e => {
+  const b = e.target.closest(".del-btn");
+  if (b) deleteCount(recentSorted[+b.dataset.idx]);
+});
 
 const daysLeft = (expiry, t) => Math.round((new Date(expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
 
@@ -370,8 +421,12 @@ document.querySelectorAll(".cal-nav button").forEach(b => b.addEventListener("cl
 $("calToday").addEventListener("click", () => pick(today()));
 $("calCancel").addEventListener("click", closeCal);
 $("calBack").addEventListener("click", e => { if (e.target === $("calBack")) closeCal(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("calBack").hidden) closeCal(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("calBack").hidden) closeCal();
+  if (e.key === "Escape" && !$("confirmBack").hidden) $("confirmCancel").click();
+});
 ["pExp", "cDate"].forEach(id => $(id).addEventListener("click", () => openCal(id)));
+$("confirmBack").addEventListener("click", e => { if (e.target === $("confirmBack")) $("confirmCancel").click(); });
 
 $("pForm").addEventListener("submit", e => {
   e.preventDefault();
@@ -394,7 +449,6 @@ document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click
 
 setDate("cDate", today());
 fillSelects();
-if (SHEET_URL) { $("sheetLink").href = SHEET_URL; $("sheetLink").hidden = false; }
 load();
 </script>
 </body>
