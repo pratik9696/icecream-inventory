@@ -383,18 +383,23 @@ function barRows(items, colorFn) {
   }).join("");
 }
 
-function sumBy(arr, keyFn) {
+function sumBy(arr, keyFn, valFn) {
+  valFn = valFn || (p => Number(p.count) || 1);
   const m = new Map();
-  arr.forEach(p => { const k = keyFn(p); m.set(k, (m.get(k) || 0) + (Number(p.count) || 1)); });
+  arr.forEach(p => { const k = keyFn(p); m.set(k, (m.get(k) || 0) + valFn(p)); });
   return [...m.entries()].sort((a, b) => b[1] - a[1]);
 }
+
+// live stock = the latest daily count for this product+type; falls back to the
+// Inward-entered count until a daily count is logged for it
+const stockOf = p => Number(p.stock != null ? p.stock : (p.count || 1)) || 0;
 
 function renderDashboard() {
   const t = today();
   const products = state.products;
 
   $("statFlavours").textContent = products.length;
-  $("statUnits").textContent = products.reduce((s, p) => s + (Number(p.count) || 1), 0);
+  $("statUnits").textContent = products.reduce((s, p) => s + stockOf(p), 0);
 
   let ok = 0, soon = 0, exp = 0;
   products.forEach(p => { const d = daysLeft(expiryOf(p), t); if (d < 0) exp++; else if (d <= 7) soon++; else ok++; });
@@ -415,10 +420,10 @@ function renderDashboard() {
     return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))}</small></div>${tag}</div>`;
   }).join("") : '<div class="empty">No products yet.</div>';
 
-  const byFlavour = sumBy(products, p => p.product).slice(0, 8);
+  const byFlavour = sumBy(products, p => p.product, stockOf).slice(0, 8);
   $("flavourBars").innerHTML = byFlavour.length ? barRows(byFlavour) : '<div class="empty">No products yet.</div>';
 
-  const byType = sumBy(products, p => p.type);
+  const byType = sumBy(products, p => p.type, stockOf);
   $("typeKey").innerHTML = byType.length ? byType.map(([label], i) =>
     `<span><i class="dot" style="background:var(${i % 2 ? "--pink" : "--green"})"></i>${esc(label)}</span>`).join("") : "";
   $("typeBars").innerHTML = byType.length ? barRows(byType, i => i % 2 ? "pink" : "") : '<div class="empty">No products yet.</div>';
