@@ -165,6 +165,8 @@
         <select id="cProd" required></select></div>
       <div class="field"><label for="cType">Type</label>
         <select id="cType" required></select></div>
+      <div class="field" id="cBatchField" hidden><label for="cBatch">Batch (manufacturing date)</label>
+        <select id="cBatch"></select></div>
       <div class="field"><label for="cCount">Count</label>
         <input id="cCount" type="number" inputmode="numeric" min="0" step="1" required></div>
       <div class="field"><label for="cDate">Count date</label>
@@ -309,10 +311,11 @@ function render() {
     .sort((a, b) => (b[0].date || "").localeCompare(a[0].date || "") || b[1] - a[1])
     .map(([r]) => r);
   $("cList").innerHTML = recentSorted.length ? recentSorted.map((r, i) =>
-    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · ${niceDate(r.date)}</small></div>
+    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · batch ${niceDate(r.manufacturing)} · ${niceDate(r.date)}</small></div>
      <div class="row-end"><span class="tag">${esc(r.count)}</span><button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this count">✕</button></div></div>`
   ).join("") : '<div class="empty">No counts yet.</div>';
 
+  updateBatchOptions();
   renderDashboard();
 }
 let recentSorted = [];
@@ -333,7 +336,7 @@ function askConfirm(msg) {
 }
 
 async function deleteCount(r) {
-  const ok = await askConfirm(`Delete this count?\n\n${r.product} · ${r.type}\n${niceDate(r.date)} · ${r.count} units`);
+  const ok = await askConfirm(`Delete this count?\n\n${r.product} · ${r.type} (batch: ${niceDate(r.manufacturing)})\n${niceDate(r.date)} · ${r.count} units`);
   if (!ok) return;
   showLoading("Deleting…");
   try {
@@ -440,6 +443,22 @@ function fillSelects() {
   });
 }
 
+// a flavour+type can have several batches (manufacturing dates) in flight at
+// once; show a batch picker only when there's genuinely more than one to
+// choose from, so the common single-batch case stays exactly as fast as before
+function updateBatchOptions() {
+  const product = $("cProd").value, type = $("cType").value;
+  const batches = state.products
+    .filter(p => p.product === product && p.type === type)
+    .sort((a, b) => a.manufacturing.localeCompare(b.manufacturing));
+  const sel = $("cBatch");
+  const prev = sel.value;
+  sel.innerHTML = batches.map(p => `<option value="${esc(p.manufacturing)}">${esc(niceDate(p.manufacturing))} · ${stockOf(p)} units</option>`).join("");
+  if (batches.some(p => p.manufacturing === prev)) sel.value = prev;
+  $("cBatchField").hidden = batches.length <= 1;
+}
+["cProd", "cType"].forEach(id => $(id).addEventListener("change", updateBatchOptions));
+
 async function submit(form, payload, okReset) {
   const btn = form.querySelector("button"); btn.disabled = true;
   showLoading(payload.action === "addProduct" ? "Saving product…" : "Saving count…");
@@ -502,8 +521,9 @@ $("pForm").addEventListener("submit", e => {
 $("cForm").addEventListener("submit", e => {
   e.preventDefault();
   if (!getDate("cDate")) return toast("Pick a count date", true);
-  submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, count: $("cCount").value, date: getDate("cDate") },
-    () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; });
+  if (!$("cBatch").value) return toast("Add " + $("cProd").value + " (" + $("cType").value + ") under Inward first", true);
+  submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, manufacturing: $("cBatch").value, count: $("cCount").value, date: getDate("cDate") },
+    () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; updateBatchOptions(); });
 });
 
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {

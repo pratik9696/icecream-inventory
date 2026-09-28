@@ -4,8 +4,11 @@
  * is also relayed, best-effort and non-blocking, to the existing Apps Script
  * web app so the Google Sheet + its native Dashboard tab keep working too.
  *
- * Mirrors the JSON contract of the old Code.gs doGet/doPost exactly, so
- * index.html needs no changes beyond SCRIPT_URL.
+ * A "batch" is (product, type, manufacturing date). The same flavour+type
+ * can have multiple batches in flight at once - a new manufacturing date
+ * creates a new row rather than overwriting the existing one; the exact same
+ * triple updates in place (two deliveries on the same date are one batch).
+ * Daily counts are logged per batch, so live stock and expiry are per batch.
  */
 
 // ---- CONFIG ------------------------------------------------------------
@@ -42,33 +45,39 @@ function checkAuth(env, key) {
   if (passcode && key !== passcode) throw new Error('unauthorized');
 }
 
-const keyOf = (product, type) => product + '' + type;
+// batch key: a flavour+type can have several rows in flight at once (one per
+// manufacturing date), so every lookup/upsert is keyed on all three fields.
+const SEP = '';
+const batchKey = (product, type, manufacturing) => product + SEP + type + SEP + manufacturing;
 
 async function buildSnapshot(env) {
   const { results: productRows } = await env.DB.prepare(
-    'SELECT product, type, manufacturing, count FROM products ORDER BY product, type'
+    'SELECT product, type, manufacturing, count FROM products ORDER BY product, type, manufacturing'
   ).all();
 
   const { results: latestRows } = await env.DB.prepare(`
-    SELECT i1.product, i1.type, i1.count
+    SELECT i1.product, i1.type, i1.manufacturing, i1.count
     FROM inventory i1
     WHERE i1.count_date = (
       SELECT MAX(i2.count_date) FROM inventory i2
-      WHERE i2.product = i1.product AND i2.type = i1.type
+      WHERE i2.product = i1.product AND i2.type = i1.type AND i2.manufacturing = i1.manufacturing
     )
   `).all();
-  const latestMap = new Map(latestRows.map(r => [keyOf(r.product, r.type), r.count]));
+  const latestMap = new Map(latestRows.map(r => [batchKey(r.product, r.type, r.manufacturing), r.count]));
 
-  const products = productRows.map(r => ({
-    product: r.product,
-    type: r.type,
-    manufacturing: r.manufacturing,
-    count: r.count,
-    stock: latestMap.has(keyOf(r.product, r.type)) ? latestMap.get(keyOf(r.product, r.type)) : r.count
-  }));
+  const products = productRows.map(r => {
+    const key = batchKey(r.product, r.type, r.manufacturing);
+    return {
+      product: r.product,
+      type: r.type,
+      manufacturing: r.manufacturing,
+      count: r.count,
+      stock: latestMap.has(key) ? latestMap.get(key) : r.count
+    };
+  });
 
   const { results: recent } = await env.DB.prepare(
-    'SELECT count_date as date, product, type, count FROM inventory ORDER BY count_date DESC, logged_at DESC LIMIT 15'
+    'SELECT count_date as date, product, type, manufacturing, count FROM inventory ORDER BY count_date DESC, logged_at DESC LIMIT 15'
   ).all();
 
   return { types: TYPES, flavours: FLAVOURS, products, recent };
@@ -115,11 +124,12 @@ export async function onRequestPost(context) {
       if (FLAVOURS.indexOf(name) < 0) throw new Error('Unknown flavour');
       if (isTooFarInFuture(b.manufacturing)) throw new Error('Manufacturing date cannot be in the future');
 
-      const existing = await env.DB.prepare('SELECT count FROM products WHERE product = ? AND type = ?').bind(name, b.type).first();
+      const existing = await env.DB.prepare('SELECT count FROM products WHERE product = ? AND type = ? AND manufacturing = ?')
+        .bind(name, b.type, b.manufacturing).first();
 
       let cnt;
       if (b.count === '' || b.count == null) {
-        // blank count on an existing product means "leave it as-is", not "reset to 1"
+        // blank count on an existing batch means "leave it as-is", not "reset to 1"
         cnt = existing ? existing.count : 1;
       } else {
         cnt = Number(b.count);
@@ -127,10 +137,10 @@ export async function onRequestPost(context) {
       }
 
       if (existing) {
-        await env.DB.prepare('UPDATE products SET manufacturing = ?, count = ? WHERE product = ? AND type = ?')
-          .bind(b.manufacturing, cnt, name, b.type).run();
+        await env.DB.prepare('UPDATE products SET count = ? WHERE product = ? AND type = ? AND manufacturing = ?')
+          .bind(cnt, name, b.type, b.manufacturing).run();
         waitUntil(relayToLegacy(env, rawBody));
-        return json(Object.assign({ ok: true, message: 'Manufacturing date and count updated' }, await buildSnapshot(env)));
+        return json(Object.assign({ ok: true, message: 'Batch count updated' }, await buildSnapshot(env)));
       }
       await env.DB.prepare('INSERT INTO products (product, type, manufacturing, count, added_on) VALUES (?, ?, ?, ?, ?)')
         .bind(name, b.type, b.manufacturing, cnt, new Date().toISOString()).run();
@@ -140,8 +150,9 @@ export async function onRequestPost(context) {
 
     if (b.action === 'deleteProduct') {
       const name = clean(b.product);
-      if (!name || !b.type) throw new Error('Product and type are required');
-      const res = await env.DB.prepare('DELETE FROM products WHERE product = ? AND type = ?').bind(name, b.type).run();
+      if (!name || !b.type || !b.manufacturing) throw new Error('Product, type and manufacturing date are required');
+      const res = await env.DB.prepare('DELETE FROM products WHERE product = ? AND type = ? AND manufacturing = ?')
+        .bind(name, b.type, b.manufacturing).run();
       if (!res.meta.changes) throw new Error('Product not found');
       waitUntil(relayToLegacy(env, rawBody));
       return json(Object.assign({ ok: true, message: 'Product deleted' }, await buildSnapshot(env)));
@@ -150,25 +161,26 @@ export async function onRequestPost(context) {
     if (b.action === 'addCount') {
       const name = clean(b.product);
       const count = Number(b.count);
-      if (!name || !b.type || !b.date || b.count === '' || !(count >= 0)) throw new Error('Product, type, date and count are required');
+      if (!name || !b.type || !b.manufacturing || !b.date || b.count === '' || !(count >= 0)) throw new Error('Product, type, batch, date and count are required');
       if (!Number.isInteger(count)) throw new Error('Count must be a whole number');
       if (isTooFarInFuture(b.date)) throw new Error('Count date cannot be in the future');
-      const prod = await env.DB.prepare('SELECT 1 FROM products WHERE product = ? AND type = ?').bind(name, b.type).first();
+      const prod = await env.DB.prepare('SELECT 1 FROM products WHERE product = ? AND type = ? AND manufacturing = ?')
+        .bind(name, b.type, b.manufacturing).first();
       if (!prod) throw new Error('Add ' + name + ' (' + b.type + ') under Products first');
 
       await env.DB.prepare(`
-        INSERT INTO inventory (product, type, count_date, count, logged_at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(product, type, count_date) DO UPDATE SET count = excluded.count, logged_at = excluded.logged_at
-      `).bind(name, b.type, b.date, count, new Date().toISOString()).run();
+        INSERT INTO inventory (product, type, manufacturing, count_date, count, logged_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(product, type, manufacturing, count_date) DO UPDATE SET count = excluded.count, logged_at = excluded.logged_at
+      `).bind(name, b.type, b.manufacturing, b.date, count, new Date().toISOString()).run();
       waitUntil(relayToLegacy(env, rawBody));
       return json(Object.assign({ ok: true, message: 'Count saved' }, await buildSnapshot(env)));
     }
 
     if (b.action === 'deleteCount') {
       const name = clean(b.product);
-      if (!name || !b.type || !b.date) throw new Error('Product, type and date are required');
-      const res = await env.DB.prepare('DELETE FROM inventory WHERE product = ? AND type = ? AND count_date = ?')
-        .bind(name, b.type, b.date).run();
+      if (!name || !b.type || !b.manufacturing || !b.date) throw new Error('Product, type, batch and date are required');
+      const res = await env.DB.prepare('DELETE FROM inventory WHERE product = ? AND type = ? AND manufacturing = ? AND count_date = ?')
+        .bind(name, b.type, b.manufacturing, b.date).run();
       if (!res.meta.changes) throw new Error('Count entry not found');
       waitUntil(relayToLegacy(env, rawBody));
       return json(Object.assign({ ok: true, message: 'Count deleted' }, await buildSnapshot(env)));
