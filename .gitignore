@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+*.log
+.dev.vars
+migrate/export.json
+migrate/seed.sql

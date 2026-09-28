@@ -1,0 +1,24 @@
+{
+  "name": "icecream-inventory",
+  "version": "1.0.0",
+  "description": "Iceano Icecream Inventory Tracker",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratik9696/icecream-inventory.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/pratik9696/icecream-inventory/issues"
+  },
+  "homepage": "https://github.com/pratik9696/icecream-inventory#readme",
+  "devDependencies": {
+    "wrangler": "^4.143.0"
+  }
+}
