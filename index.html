@@ -265,13 +265,15 @@ async function api(payload) {
   return data;
 }
 
+function applyData(d) {
+  state = { ...state, ...d };
+  fillSelects();
+  render();
+}
+
 async function load() {
-  try {
-    const d = await api();
-    state = { ...state, ...d };
-    fillSelects();
-    render();
-  } catch (e) { toast(e.message, true); $("pList").innerHTML = $("cList").innerHTML = '<div class="empty">Could not load data.</div>'; }
+  try { applyData(await api()); }
+  catch (e) { toast(e.message, true); $("pList").innerHTML = $("cList").innerHTML = '<div class="empty">Could not load data.</div>'; }
 }
 
 function render() {
@@ -309,8 +311,11 @@ function askConfirm(msg) {
 async function deleteCount(r) {
   const ok = await askConfirm(`Delete this count?\n\n${r.product} · ${r.type}\n${niceDate(r.date)} · ${r.count} units`);
   if (!ok) return;
-  try { const d = await api({ action: "deleteCount", ...r }); toast(d.message || "Deleted"); await load(); }
-  catch (e) { toast(e.message, true); }
+  try {
+    const d = await api({ action: "deleteCount", ...r });
+    toast(d.message || "Deleted");
+    d.recent ? applyData(d) : await load();
+  } catch (e) { toast(e.message, true); }
 }
 $("cList").addEventListener("click", e => {
   const b = e.target.closest(".del-btn");
@@ -383,8 +388,11 @@ function fillSelects() {
 
 async function submit(form, payload, okReset) {
   const btn = form.querySelector("button"); btn.disabled = true;
-  try { const d = await api(payload); toast(d.message); okReset(); await load(); }
-  catch (e) { toast(e.message, true); }
+  try {
+    const d = await api(payload);
+    toast(d.message); okReset();
+    d.recent ? applyData(d) : await load();
+  } catch (e) { toast(e.message, true); }
   btn.disabled = false;
 }
 
