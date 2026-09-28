@@ -28,6 +28,15 @@ function clean(s) {
   return String(s || '').trim().replace(/\s+/g, ' ');
 }
 
+// yyyy-mm-dd strings sort lexicographically same as chronologically. Allow
+// a 1-day grace window past the server's UTC "today" so a legitimate local
+// "today" entered in a timezone ahead of UTC (e.g. IST) isn't rejected.
+function isTooFarInFuture(dateStr) {
+  const max = new Date();
+  max.setUTCDate(max.getUTCDate() + 1);
+  return dateStr > max.toISOString().slice(0, 10);
+}
+
 function checkAuth(env, key) {
   const passcode = env.PASSCODE || '';
   if (passcode && key !== passcode) throw new Error('unauthorized');
@@ -104,10 +113,19 @@ export async function onRequestPost(context) {
       if (!name || !b.type || !b.manufacturing) throw new Error('Product, type and manufacturing date are required');
       if (TYPES.indexOf(b.type) < 0) throw new Error('Unknown type');
       if (FLAVOURS.indexOf(name) < 0) throw new Error('Unknown flavour');
-      const cnt = (b.count === '' || b.count == null) ? 1 : Number(b.count);
-      if (!Number.isInteger(cnt) || cnt < 1) throw new Error('Count must be a whole number, 1 or more');
+      if (isTooFarInFuture(b.manufacturing)) throw new Error('Manufacturing date cannot be in the future');
 
-      const existing = await env.DB.prepare('SELECT 1 FROM products WHERE product = ? AND type = ?').bind(name, b.type).first();
+      const existing = await env.DB.prepare('SELECT count FROM products WHERE product = ? AND type = ?').bind(name, b.type).first();
+
+      let cnt;
+      if (b.count === '' || b.count == null) {
+        // blank count on an existing product means "leave it as-is", not "reset to 1"
+        cnt = existing ? existing.count : 1;
+      } else {
+        cnt = Number(b.count);
+        if (!Number.isInteger(cnt) || cnt < 1) throw new Error('Count must be a whole number, 1 or more');
+      }
+
       if (existing) {
         await env.DB.prepare('UPDATE products SET manufacturing = ?, count = ? WHERE product = ? AND type = ?')
           .bind(b.manufacturing, cnt, name, b.type).run();
@@ -133,6 +151,8 @@ export async function onRequestPost(context) {
       const name = clean(b.product);
       const count = Number(b.count);
       if (!name || !b.type || !b.date || b.count === '' || !(count >= 0)) throw new Error('Product, type, date and count are required');
+      if (!Number.isInteger(count)) throw new Error('Count must be a whole number');
+      if (isTooFarInFuture(b.date)) throw new Error('Count date cannot be in the future');
       const prod = await env.DB.prepare('SELECT 1 FROM products WHERE product = ? AND type = ?').bind(name, b.type).first();
       if (!prod) throw new Error('Add ' + name + ' (' + b.type + ') under Products first');
 
