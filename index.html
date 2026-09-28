@@ -78,6 +78,13 @@
   #confirmCancel{background:var(--bg);color:var(--ink)}
   #confirmOk.danger{background:var(--bad);color:#fff}
 
+  .loading-back{position:fixed;inset:0;background:rgba(20,40,24,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+  .loading-box{background:#fff;border-radius:20px;padding:26px 32px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  .spinner{width:36px;height:36px;border:4px solid var(--green-soft);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
+  .loading-box p{margin:0;font:600 15px "Fredoka",system-ui,sans-serif;color:var(--green-dark)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+
   /* dashboard */
   .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
   .stat-tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
@@ -140,8 +147,8 @@
         <select id="pName" required></select></div>
       <div class="field"><label for="pType">Type</label>
         <select id="pType" required></select></div>
-      <div class="field"><label for="pExp">Expiry date</label>
-        <input id="pExp" class="datebox" readonly inputmode="none" autocomplete="off" placeholder="Tap to pick a date"></div>
+      <div class="field"><label for="pMfg">Manufacturing date</label>
+        <input id="pMfg" class="datebox" readonly inputmode="none" autocomplete="off" placeholder="Tap to pick a date"></div>
       <div class="field"><label for="pCount">Count (optional)</label>
         <input id="pCount" type="number" inputmode="numeric" min="1" step="1" placeholder="1 if left empty"></div>
       <button class="go" type="submit">Save product</button>
@@ -227,11 +234,19 @@
   </div>
 </div>
 
+<div class="loading-back" id="loadingBack" hidden aria-live="polite">
+  <div class="loading-box">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="loadingMsg">Saving…</p>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 // ====== CONFIG: paste your values here ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzgs9xmtHpxbb11V8_vit02XEbzTYLtBx_KPAL8mpkjFAtk5ox2zU16vwAKYbAGx7hAuQ/exec";
+const SHELF_LIFE_DAYS = 30;   // expiry = manufacturing date + this many days
 // ============================================
 
 const $ = id => document.getElementById(id);
@@ -279,9 +294,10 @@ async function load() {
 function render() {
   const t = today();
   $("pList").innerHTML = state.products.length ? state.products.map((p, i) => {
-    const days = daysLeft(p.expiry, t);
+    const exp = expiryOf(p);
+    const days = daysLeft(exp, t);
     const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
-    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · expires ${niceDate(p.expiry)}</small></div>
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · ${p.count || 1} units · mfg ${niceDate(p.manufacturing)} · expires ${niceDate(exp)}</small></div>
      <div class="row-end">${tag}<button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this product">✕</button></div></div>`;
   }).join("") : '<div class="empty">No products yet. Add your first one above.</div>';
 
@@ -298,6 +314,10 @@ function render() {
 }
 let recentSorted = [];
 
+let loadingCount = 0;
+function showLoading(msg) { $("loadingMsg").textContent = msg || "Saving…"; loadingCount++; $("loadingBack").hidden = false; }
+function hideLoading() { loadingCount = Math.max(0, loadingCount - 1); if (!loadingCount) $("loadingBack").hidden = true; }
+
 function askConfirm(msg) {
   return new Promise(resolve => {
     $("confirmMsg").textContent = msg;
@@ -312,11 +332,13 @@ function askConfirm(msg) {
 async function deleteCount(r) {
   const ok = await askConfirm(`Delete this count?\n\n${r.product} · ${r.type}\n${niceDate(r.date)} · ${r.count} units`);
   if (!ok) return;
+  showLoading("Deleting…");
   try {
     const d = await api({ action: "deleteCount", ...r });
     toast(d.message || "Deleted");
     d.recent ? applyData(d) : await load();
   } catch (e) { toast(e.message, true); }
+  finally { hideLoading(); }
 }
 $("cList").addEventListener("click", e => {
   const b = e.target.closest(".del-btn");
@@ -324,13 +346,15 @@ $("cList").addEventListener("click", e => {
 });
 
 async function deleteProduct(p) {
-  const ok = await askConfirm(`Delete this product?\n\n${p.product} · ${p.type}\nExpires ${niceDate(p.expiry)}`);
+  const ok = await askConfirm(`Delete this product?\n\n${p.product} · ${p.type}\nManufactured ${niceDate(p.manufacturing)} · expires ${niceDate(expiryOf(p))}`);
   if (!ok) return;
+  showLoading("Deleting…");
   try {
     const d = await api({ action: "deleteProduct", ...p });
     toast(d.message || "Deleted");
     d.products ? applyData(d) : await load();
   } catch (e) { toast(e.message, true); }
+  finally { hideLoading(); }
 }
 $("pList").addEventListener("click", e => {
   const b = e.target.closest(".del-btn");
@@ -338,6 +362,13 @@ $("pList").addEventListener("click", e => {
 });
 
 const daysLeft = (expiry, t) => Math.round((new Date(expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00");
+  d.setDate(d.getDate() + n);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+}
+const expiryOf = p => addDays(p.manufacturing, SHELF_LIFE_DAYS);
 
 function barRows(items, colorFn) {
   const max = Math.max(1, ...items.map(([, v]) => v));
@@ -366,7 +397,7 @@ function renderDashboard() {
   $("statUnits").textContent = products.reduce((s, p) => s + (Number(p.count) || 1), 0);
 
   let ok = 0, soon = 0, exp = 0;
-  products.forEach(p => { const d = daysLeft(p.expiry, t); if (d < 0) exp++; else if (d <= 7) soon++; else ok++; });
+  products.forEach(p => { const d = daysLeft(expiryOf(p), t); if (d < 0) exp++; else if (d <= 7) soon++; else ok++; });
   $("statSoon").textContent = soon; $("statSoon").classList.toggle("warn", soon > 0);
   $("statExpired").textContent = exp; $("statExpired").classList.toggle("bad", exp > 0);
 
@@ -377,11 +408,11 @@ function renderDashboard() {
     <span><i class="dot soon"></i>Expiring soon · ${soon}</span>
     <span><i class="dot exp"></i>Expired · ${exp}</span>` : '<div class="empty">No products yet.</div>';
 
-  const soonest = [...products].sort((a, b) => daysLeft(a.expiry, t) - daysLeft(b.expiry, t)).slice(0, 3);
+  const soonest = [...products].sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t)).slice(0, 3);
   $("attnList").innerHTML = soonest.length ? soonest.map(p => {
-    const days = daysLeft(p.expiry, t);
+    const days = daysLeft(expiryOf(p), t);
     const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
-    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(p.expiry)}</small></div>${tag}</div>`;
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))}</small></div>${tag}</div>`;
   }).join("") : '<div class="empty">No products yet.</div>';
 
   const byFlavour = sumBy(products, p => p.product).slice(0, 8);
@@ -403,11 +434,13 @@ function fillSelects() {
 
 async function submit(form, payload, okReset) {
   const btn = form.querySelector("button"); btn.disabled = true;
+  showLoading(payload.action === "addProduct" ? "Saving product…" : "Saving count…");
   try {
     const d = await api(payload);
     toast(d.message); okReset();
     d.recent ? applyData(d) : await load();
   } catch (e) { toast(e.message, true); }
+  hideLoading();
   btn.disabled = false;
 }
 
@@ -448,14 +481,14 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && !$("calBack").hidden) closeCal();
   if (e.key === "Escape" && !$("confirmBack").hidden) $("confirmCancel").click();
 });
-["pExp", "cDate"].forEach(id => $(id).addEventListener("click", () => openCal(id)));
+["pMfg", "cDate"].forEach(id => $(id).addEventListener("click", () => openCal(id)));
 $("confirmBack").addEventListener("click", e => { if (e.target === $("confirmBack")) $("confirmCancel").click(); });
 
 $("pForm").addEventListener("submit", e => {
   e.preventDefault();
-  if (!getDate("pExp")) return toast("Pick an expiry date", true);
-  submit(e.target, { action: "addProduct", product: $("pName").value, type: $("pType").value, expiry: getDate("pExp"), count: $("pCount").value },
-    () => { $("pName").value = ""; $("pType").value = ""; setDate("pExp", ""); $("pCount").value = ""; });
+  if (!getDate("pMfg")) return toast("Pick a manufacturing date", true);
+  submit(e.target, { action: "addProduct", product: $("pName").value, type: $("pType").value, manufacturing: getDate("pMfg"), count: $("pCount").value },
+    () => { $("pName").value = ""; $("pType").value = ""; setDate("pMfg", ""); $("pCount").value = ""; });
 });
 
 $("cForm").addEventListener("submit", e => {
