@@ -66,11 +66,15 @@ async function buildSnapshot(env) {
 }
 
 // best-effort mirror into the existing Apps Script + Google Sheet; never blocks
-// or fails the user-facing response
+// or fails the user-facing response. Uses its own LEGACY_PASSCODE (matching
+// Code.gs's PASSCODE) rather than the browser's key, so the relay keeps
+// authenticating even if the app-facing passcode is disabled or different.
 async function relayToLegacy(env, rawBody) {
   if (!env.LEGACY_SCRIPT_URL) return;
   try {
-    await fetch(env.LEGACY_SCRIPT_URL, { method: 'POST', body: rawBody });
+    const body = JSON.parse(rawBody);
+    body.key = env.LEGACY_PASSCODE || '';
+    await fetch(env.LEGACY_SCRIPT_URL, { method: 'POST', body: JSON.stringify(body) });
   } catch (err) {
     console.error('Sheet mirror failed:', err);
   }
