@@ -511,7 +511,7 @@ function renderDashboard() {
     return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))} · ${stockOf(p)} units</small></div><span class="tag soon">${days}d left</span></div>`;
   }).join("") : '<div class="empty">Nothing expiring soon.</div>';
 
-  $("flavourTableBody").innerHTML = state.flavours.map(f => {
+  $("flavourTableBody").innerHTML = [...state.flavours].sort((a, b) => a.localeCompare(b)).map(f => {
     const rows = products.filter(p => p.product === f);
     const bucket = (type, live) => rows
       .filter(p => p.type === type && (daysLeft(expiryOf(p), t) >= 0) === live)

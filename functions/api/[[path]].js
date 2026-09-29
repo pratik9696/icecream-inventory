@@ -53,7 +53,7 @@ const batchKey = (product, type, manufacturing) => product + SEP + type + SEP + 
 
 async function buildSnapshot(env) {
   const { results: productRows } = await env.DB.prepare(
-    'SELECT product, type, manufacturing, count, status FROM products ORDER BY product, type, manufacturing'
+    'SELECT product, type, manufacturing, count, status FROM products ORDER BY added_on DESC'
   ).all();
 
   const { results: latestRows } = await env.DB.prepare(`
