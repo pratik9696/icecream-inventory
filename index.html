@@ -24,14 +24,15 @@
   header p{margin:2px 0 0;color:var(--muted);font-size:14px}
   main{max-width:560px;margin:0 auto;padding:14px}
   .copyright{text-align:center;color:var(--muted);font-size:12px;margin:10px 0 4px}
-  .tabs{display:flex;gap:8px;margin:0 0 14px}
-  .tabs button{flex:1;padding:12px;border:2px solid var(--green);background:#fff;color:var(--green-dark);
-       border-radius:999px;font:600 16px "Fredoka",system-ui,sans-serif;cursor:pointer}
+  .tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  .tabs button{flex:1;min-width:calc(50% - 4px);padding:10px 6px;border:2px solid var(--green);background:#fff;color:var(--green-dark);
+       border-radius:999px;font:600 14px "Fredoka",system-ui,sans-serif;cursor:pointer}
   .tabs button[aria-selected="true"]{background:var(--green);color:#fff}
   section{display:none} section.on{display:block}
   form,.list{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px}
   label{display:block;font-weight:600;margin:0 0 6px;font-size:14px}
   .field{margin-bottom:14px}
+  .field small{display:block;margin-top:6px;color:var(--muted);font-size:13px}
   input,select{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;
        font:inherit;background:#fff;color:var(--ink)}
   input:focus,select:focus,button:focus-visible{outline:3px solid #f6a9c9;outline-offset:1px;border-color:var(--pink)}
@@ -156,6 +157,7 @@
 
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="true" data-tab="counts">Daily count</button>
+    <button role="tab" aria-selected="false" data-tab="storeload">Store Load</button>
     <button role="tab" aria-selected="false" data-tab="products">Inward</button>
     <button role="tab" aria-selected="false" data-tab="dashboard">Dashboard</button>
   </div>
@@ -192,6 +194,23 @@
       <button class="go" type="submit">Save count</button>
     </form>
     <div class="list"><h2>Recent counts</h2><div id="cList"><div class="empty">Loading…</div></div></div>
+  </section>
+
+  <!-- STORE LOAD -->
+  <section id="storeload">
+    <form id="slForm">
+      <h2>Load to store</h2>
+      <div class="field"><label for="slProd">Flavour</label>
+        <select id="slProd" required></select></div>
+      <div class="field"><label for="slType">Type</label>
+        <select id="slType" required></select></div>
+      <div class="field" id="slBatchField" hidden><label for="slBatch">Batch (manufacturing date)</label>
+        <select id="slBatch"></select></div>
+      <div class="field"><label for="slCount">Count</label>
+        <input id="slCount" type="number" inputmode="numeric" min="1" step="1" required>
+        <small id="slStockHint"></small></div>
+      <button class="go" type="submit">Deduct from inventory</button>
+    </form>
   </section>
 
   <!-- DASHBOARD -->
@@ -368,6 +387,7 @@ function render() {
   ).join("") : '<div class="empty">No counts yet.</div>';
 
   updateBatchOptions();
+  updateStoreLoadOptions();
   renderDashboard();
 }
 let recentSorted = [];
@@ -565,8 +585,8 @@ function renderDashboard() {
 function fillSelects() {
   const opts = (arr, ph) => `<option value="">${ph}</option>` + arr.map(x => `<option>${esc(x)}</option>`).join("");
   const flavoursSorted = [...state.flavours].sort((a, b) => a.localeCompare(b));
-  [["pName", "Select flavour", flavoursSorted], ["cProd", "Select flavour", flavoursSorted],
-   ["pType", "Select type", state.types], ["cType", "Select type", state.types]].forEach(([id, ph, arr]) => {
+  [["pName", "Select flavour", flavoursSorted], ["cProd", "Select flavour", flavoursSorted], ["slProd", "Select flavour", flavoursSorted],
+   ["pType", "Select type", state.types], ["cType", "Select type", state.types], ["slType", "Select type", state.types]].forEach(([id, ph, arr]) => {
     const el = $(id), v = el.value; el.innerHTML = opts(arr, ph); el.value = v;
   });
 }
@@ -574,25 +594,36 @@ function fillSelects() {
 // a flavour+type can have several batches (manufacturing dates) in flight at
 // once; show a batch picker only when there's genuinely more than one to
 // choose from, so the common single-batch case stays exactly as fast as before
-function updateBatchOptions() {
-  const product = $("cProd").value, type = $("cType").value;
+function updateBatchOptionsFor(prodId, typeId, fieldId, batchId) {
+  const product = $(prodId).value, type = $(typeId).value;
   const batches = state.products
     .filter(p => p.product === product && p.type === type)
     .sort((a, b) => a.manufacturing.localeCompare(b.manufacturing));
-  const sel = $("cBatch");
+  const sel = $(batchId);
   const prev = sel.value;
   sel.innerHTML = batches.map(p => `<option value="${esc(p.manufacturing)}">${esc(niceDate(p.manufacturing))} · ${stockOf(p)} units</option>`).join("");
   if (batches.some(p => p.manufacturing === prev)) sel.value = prev;
-  $("cBatchField").hidden = batches.length <= 1;
+  $(fieldId).hidden = batches.length <= 1;
 }
+function updateBatchOptions() { updateBatchOptionsFor("cProd", "cType", "cBatchField", "cBatch"); }
 ["cProd", "cType"].forEach(id => $(id).addEventListener("change", updateBatchOptions));
 
-async function submit(form, payload, okReset) {
+function currentSlBatch() {
+  return state.products.find(p => p.product === $("slProd").value && p.type === $("slType").value && p.manufacturing === $("slBatch").value);
+}
+function updateStoreLoadOptions() {
+  updateBatchOptionsFor("slProd", "slType", "slBatchField", "slBatch");
+  const p = currentSlBatch();
+  $("slStockHint").textContent = p ? `Current stock: ${stockOf(p)} units` : "";
+}
+["slProd", "slType", "slBatch"].forEach(id => $(id).addEventListener("change", updateStoreLoadOptions));
+
+async function submit(form, payload, okReset, msg) {
   const btn = form.querySelector("button"); btn.disabled = true;
   showLoading(payload.action === "addProduct" ? "Saving product…" : "Saving count…");
   try {
     const d = await api(payload);
-    toast(d.message); okReset();
+    toast(msg || d.message); okReset();
     d.recent ? applyData(d) : await load();
   } catch (e) { toast(e.message, true); }
   hideLoading();
@@ -651,6 +682,24 @@ $("cForm").addEventListener("submit", e => {
   if (!$("cBatch").value) return toast("Add " + $("cProd").value + " (" + $("cType").value + ") under Inward first", true);
   submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, manufacturing: $("cBatch").value, count: $("cCount").value, date: today() },
     () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; updateBatchOptions(); });
+});
+
+// a store load reuses the same "save today's count" mechanism as Daily count -
+// it just computes what that count should be (current stock minus the load)
+// instead of asking the user to re-enter an absolute number. If a Daily count
+// is logged later the same day, that physical recount wins (same-day upsert),
+// exactly like two Daily counts on the same day would.
+$("slForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!$("slBatch").value) return toast("Add " + $("slProd").value + " (" + $("slType").value + ") under Inward first", true);
+  const batch = currentSlBatch();
+  const loadAmount = Number($("slCount").value);
+  const currentStock = stockOf(batch);
+  if (loadAmount > currentStock) return toast(`Not enough stock: only ${currentStock} units available`, true);
+  const newStock = currentStock - loadAmount;
+  submit(e.target, { action: "addCount", product: $("slProd").value, type: $("slType").value, manufacturing: $("slBatch").value, count: String(newStock), date: today() },
+    () => { $("slCount").value = ""; $("slProd").value = ""; $("slType").value = ""; updateStoreLoadOptions(); },
+    `Loaded ${loadAmount} · ${newStock} units left`);
 });
 
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
