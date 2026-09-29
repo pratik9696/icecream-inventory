@@ -504,11 +504,11 @@ function renderDashboard() {
 
   const soonest = products
     .filter(p => { const d = daysLeft(expiryOf(p), t); return d >= 0 && d <= 7; })
-    .sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t))
-    .slice(0, 3);
+    .sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t) || stockOf(b) - stockOf(a))
+    .slice(0, 10);
   $("attnList").innerHTML = soonest.length ? soonest.map(p => {
     const days = daysLeft(expiryOf(p), t);
-    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))}</small></div><span class="tag soon">${days}d left</span></div>`;
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))} · ${stockOf(p)} units</small></div><span class="tag soon">${days}d left</span></div>`;
   }).join("") : '<div class="empty">Nothing expiring soon.</div>';
 
   $("flavourTableBody").innerHTML = state.flavours.map(f => {
