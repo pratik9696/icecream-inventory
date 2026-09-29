@@ -163,6 +163,22 @@ async function run() {
   await api({ action: 'deleteProduct', product: 'Mango', type: 'Family Pack', manufacturing: today(-1) });
   await api({ action: 'deleteProduct', product: 'Mango', type: 'Mini Pack', manufacturing: today(-5) });
 
+  // ---- batch status (returned/disposed) ----
+  r = await api({ action: 'addProduct', product: 'Sitafal', type: 'Family Pack', manufacturing: today(-40), count: '4' });
+  check('new batch defaults to status active', findBatch(r.products, 'Sitafal', 'Family Pack', today(-40))?.status === 'active');
+
+  r = await api({ action: 'setBatchStatus', product: 'Sitafal', type: 'Family Pack', manufacturing: today(-40), status: 'returned' });
+  check('setBatchStatus succeeds', r.ok, r.error);
+  check('status updated to returned', findBatch(r.products, 'Sitafal', 'Family Pack', today(-40))?.status === 'returned');
+
+  r = await api({ action: 'setBatchStatus', product: 'Sitafal', type: 'Family Pack', manufacturing: today(-40), status: 'bogus' });
+  check('reject unknown status value', !r.ok);
+
+  r = await api({ action: 'setBatchStatus', product: 'Ghost', type: 'Family Pack', manufacturing: today(), status: 'disposed' });
+  check('setBatchStatus on nonexistent batch returns not-found', !r.ok && /not found/i.test(r.error));
+
+  await api({ action: 'deleteProduct', product: 'Sitafal', type: 'Family Pack', manufacturing: today(-40) });
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (failures.length) {
     console.log('\nFailures:');

@@ -53,7 +53,7 @@ const batchKey = (product, type, manufacturing) => product + SEP + type + SEP + 
 
 async function buildSnapshot(env) {
   const { results: productRows } = await env.DB.prepare(
-    'SELECT product, type, manufacturing, count FROM products ORDER BY product, type, manufacturing'
+    'SELECT product, type, manufacturing, count, status FROM products ORDER BY product, type, manufacturing'
   ).all();
 
   const { results: latestRows } = await env.DB.prepare(`
@@ -73,6 +73,7 @@ async function buildSnapshot(env) {
       type: r.type,
       manufacturing: r.manufacturing,
       count: r.count,
+      status: r.status || 'active',
       stock: latestMap.has(key) ? latestMap.get(key) : r.count
     };
   });
@@ -157,6 +158,17 @@ export async function onRequestPost(context) {
       if (!res.meta.changes) throw new Error('Product not found');
       waitUntil(relayToLegacy(env, rawBody));
       return json(Object.assign({ ok: true, message: 'Product deleted' }, await buildSnapshot(env)));
+    }
+
+    if (b.action === 'setBatchStatus') {
+      const name = clean(b.product);
+      if (!name || !b.type || !b.manufacturing) throw new Error('Product, type and manufacturing date are required');
+      if (['active', 'returned', 'disposed'].indexOf(b.status) < 0) throw new Error('Unknown status');
+      const res = await env.DB.prepare('UPDATE products SET status = ? WHERE product = ? AND type = ? AND manufacturing = ?')
+        .bind(b.status, name, b.type, b.manufacturing).run();
+      if (!res.meta.changes) throw new Error('Product not found');
+      waitUntil(relayToLegacy(env, rawBody));
+      return json(Object.assign({ ok: true, message: 'Marked ' + b.status }, await buildSnapshot(env)));
     }
 
     if (b.action === 'addCount') {

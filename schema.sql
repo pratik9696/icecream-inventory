@@ -10,8 +10,11 @@ CREATE TABLE IF NOT EXISTS products (
   manufacturing TEXT NOT NULL,   -- yyyy-mm-dd, part of the batch key
   count INTEGER NOT NULL DEFAULT 1,
   added_on TEXT NOT NULL,        -- ISO timestamp
+  status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'returned' | 'disposed'
   PRIMARY KEY (product, type, manufacturing)
 );
+-- On an existing database (this column didn't always exist), run instead:
+--   ALTER TABLE products ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
 
 CREATE TABLE IF NOT EXISTS inventory (
   product TEXT NOT NULL,

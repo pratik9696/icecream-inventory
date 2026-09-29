@@ -109,6 +109,26 @@
   .bar-fill.pink{background:var(--pink)}
   .bar-row .bar-value{font-size:13px;font-weight:600;text-align:right}
   .type-key{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;font-size:13px}
+
+  .expired-row{padding:12px 0;border-top:1px solid var(--line)}
+  .expired-row:first-of-type{border-top:0}
+  .expired-row .exp-meta{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+  .expired-row .exp-actions{display:flex;gap:8px}
+  .resolve-btn{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 10px;
+       font:600 13px system-ui,sans-serif;color:var(--ink);cursor:pointer}
+  .resolve-btn:active{background:var(--bg)}
+
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .flavour-table{border-collapse:collapse;width:100%;min-width:420px;font-size:12.5px}
+  .flavour-table th,.flavour-table td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--line)}
+  .flavour-table thead th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}
+  .flavour-table thead tr:first-child th{border-bottom:0;padding-bottom:2px}
+  .flavour-table thead tr.sub th{padding-top:0}
+  .flavour-table td:first-child,.flavour-table th:first-child{text-align:left;white-space:nowrap}
+  .flavour-table td.total{font-weight:700}
+  .cell-good{background:var(--green-soft);color:var(--green-dark);border-radius:8px;font-weight:600}
+  .cell-warn{background:#fdebc4;color:var(--warn);border-radius:8px;font-weight:600}
+  .cell-bad{background:#fbd3d8;color:var(--bad);border-radius:8px;font-weight:600}
 </style>
 </head>
 <body>
@@ -194,8 +214,24 @@
     </div>
 
     <div class="dash-card">
+      <h2>Expired — needs action</h2>
+      <div id="expiredList"><div class="empty">Nothing expired 🎉</div></div>
+    </div>
+
+    <div class="dash-card">
       <h2>Expiring soonest</h2>
       <div id="attnList"><div class="empty">No products yet.</div></div>
+    </div>
+
+    <div class="dash-card">
+      <h2>Flavour status</h2>
+      <div class="table-scroll">
+        <table class="flavour-table">
+          <thead><tr><th>Flavour</th><th colspan="2">Family</th><th colspan="2">Mini</th><th>Total</th></tr>
+          <tr class="sub"><th></th><th>Live</th><th>Exp</th><th>Live</th><th>Exp</th><th></th></tr></thead>
+          <tbody id="flavourTableBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="dash-card">
@@ -252,6 +288,8 @@
 // ====== CONFIG: paste your values here ======
 const SCRIPT_URL = "/api";
 const SHELF_LIFE_DAYS = 30;   // expiry = manufacturing date + this many days
+const MIN_FAMILY = 3;         // Family Pack live units below this is flagged low
+const MIN_MINI = 3;           // Mini Pack live units below this is flagged low
 // ============================================
 
 const $ = id => document.getElementById(id);
@@ -367,6 +405,20 @@ $("pList").addEventListener("click", e => {
   if (b) deleteProduct(state.products[+b.dataset.idx]);
 });
 
+async function resolveBatch(p, status) {
+  showLoading(status === "returned" ? "Marking returned…" : "Marking disposed…");
+  try {
+    const d = await api({ action: "setBatchStatus", product: p.product, type: p.type, manufacturing: p.manufacturing, status });
+    toast(d.message || "Updated");
+    d.products ? applyData(d) : await load();
+  } catch (e) { toast(e.message, true); }
+  finally { hideLoading(); }
+}
+$("expiredList").addEventListener("click", e => {
+  const b = e.target.closest(".resolve-btn");
+  if (b) resolveBatch(expiredSorted[+b.dataset.idx], b.dataset.status);
+});
+
 const daysLeft = (expiry, t) => Math.round((new Date(expiry + "T00:00") - new Date(t + "T00:00")) / 864e5);
 function addDays(dateStr, n) {
   const d = new Date(dateStr + "T00:00");
@@ -400,15 +452,22 @@ function sumBy(arr, keyFn, valFn) {
 // Inward-entered count until a daily count is logged for it
 const stockOf = p => Number(p.stock != null ? p.stock : (p.count || 1)) || 0;
 
+let expiredSorted = [];
+
 function renderDashboard() {
   const t = today();
-  const products = state.products;
+  // returned/disposed batches are no longer live inventory - excluded from
+  // every stat/chart below, the same way they're excluded from the Expired list
+  const products = state.products.filter(p => (p.status || "active") === "active");
 
   $("statFlavours").textContent = products.length;
   $("statUnits").textContent = products.reduce((s, p) => s + stockOf(p), 0);
 
   let ok = 0, soon = 0, exp = 0;
-  products.forEach(p => { const d = daysLeft(expiryOf(p), t); if (d < 0) exp++; else if (d <= 7) soon++; else ok++; });
+  products.forEach(p => {
+    const d = daysLeft(expiryOf(p), t), u = stockOf(p);
+    if (d < 0) exp += u; else if (d <= 7) soon += u; else ok += u;
+  });
   $("statSoon").textContent = soon; $("statSoon").classList.toggle("warn", soon > 0);
   $("statExpired").textContent = exp; $("statExpired").classList.toggle("bad", exp > 0);
 
@@ -419,12 +478,45 @@ function renderDashboard() {
     <span><i class="dot soon"></i>Expiring soon · ${soon}</span>
     <span><i class="dot exp"></i>Expired · ${exp}</span>` : '<div class="empty">No products yet.</div>';
 
-  const soonest = [...products].sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t)).slice(0, 3);
+  expiredSorted = products
+    .filter(p => daysLeft(expiryOf(p), t) < 0)
+    .sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t));
+  $("expiredList").innerHTML = expiredSorted.length ? expiredSorted.map((p, i) => {
+    const days = -daysLeft(expiryOf(p), t);
+    return `<div class="expired-row">
+      <div class="exp-meta"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · batch ${niceDate(p.manufacturing)} · ${stockOf(p)} units</small></div><span class="tag exp">${days}d overdue</span></div>
+      <div class="exp-actions">
+        <button type="button" class="resolve-btn" data-idx="${i}" data-status="returned">Mark Returned</button>
+        <button type="button" class="resolve-btn" data-idx="${i}" data-status="disposed">Mark Disposed</button>
+      </div>
+    </div>`;
+  }).join("") : '<div class="empty">Nothing expired 🎉</div>';
+
+  const soonest = products
+    .filter(p => { const d = daysLeft(expiryOf(p), t); return d >= 0 && d <= 7; })
+    .sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t))
+    .slice(0, 3);
   $("attnList").innerHTML = soonest.length ? soonest.map(p => {
     const days = daysLeft(expiryOf(p), t);
-    const tag = days < 0 ? `<span class="tag exp">Expired</span>` : days <= 7 ? `<span class="tag soon">${days}d left</span>` : `<span class="tag">${days}d left</span>`;
-    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))}</small></div>${tag}</div>`;
-  }).join("") : '<div class="empty">No products yet.</div>';
+    return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))}</small></div><span class="tag soon">${days}d left</span></div>`;
+  }).join("") : '<div class="empty">Nothing expiring soon.</div>';
+
+  $("flavourTableBody").innerHTML = state.flavours.map(f => {
+    const rows = products.filter(p => p.product === f);
+    const bucket = (type, live) => rows
+      .filter(p => p.type === type && (daysLeft(expiryOf(p), t) >= 0) === live)
+      .reduce((s, p) => s + stockOf(p), 0);
+    const famLive = bucket("Family Pack", true), famExp = bucket("Family Pack", false);
+    const minLive = bucket("Mini Pack", true), minExp = bucket("Mini Pack", false);
+    return `<tr>
+      <td>${esc(f)}</td>
+      <td class="${famLive >= MIN_FAMILY ? "cell-good" : "cell-warn"}">${famLive}</td>
+      <td class="${famExp > 0 ? "cell-bad" : "cell-good"}">${famExp}</td>
+      <td class="${minLive >= MIN_MINI ? "cell-good" : "cell-warn"}">${minLive}</td>
+      <td class="${minExp > 0 ? "cell-bad" : "cell-good"}">${minExp}</td>
+      <td class="total">${famLive + minLive}</td>
+    </tr>`;
+  }).join("");
 
   const byFlavour = sumBy(products, p => p.product, stockOf).slice(0, 8);
   $("flavourBars").innerHTML = byFlavour.length ? barRows(byFlavour) : '<div class="empty">No products yet.</div>';
