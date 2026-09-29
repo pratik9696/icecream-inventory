@@ -189,8 +189,6 @@
         <select id="cBatch"></select></div>
       <div class="field"><label for="cCount">Count</label>
         <input id="cCount" type="number" inputmode="numeric" min="0" step="1" required></div>
-      <div class="field"><label for="cDate">Count date</label>
-        <input id="cDate" class="datebox" readonly inputmode="none" autocomplete="off" placeholder="Tap to pick a date"></div>
       <button class="go" type="submit">Save count</button>
     </form>
     <div class="list"><h2>Recent counts</h2><div id="cList"><div class="empty">Loading…</div></div></div>
@@ -611,7 +609,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape" && !$("calBack").hidden) closeCal();
   if (e.key === "Escape" && !$("confirmBack").hidden) $("confirmCancel").click();
 });
-["pMfg", "cDate"].forEach(id => $(id).addEventListener("click", () => openCal(id)));
+["pMfg"].forEach(id => $(id).addEventListener("click", () => openCal(id)));
 $("confirmBack").addEventListener("click", e => { if (e.target === $("confirmBack")) $("confirmCancel").click(); });
 
 $("pForm").addEventListener("submit", e => {
@@ -623,9 +621,8 @@ $("pForm").addEventListener("submit", e => {
 
 $("cForm").addEventListener("submit", e => {
   e.preventDefault();
-  if (!getDate("cDate")) return toast("Pick a count date", true);
   if (!$("cBatch").value) return toast("Add " + $("cProd").value + " (" + $("cType").value + ") under Inward first", true);
-  submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, manufacturing: $("cBatch").value, count: $("cCount").value, date: getDate("cDate") },
+  submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, manufacturing: $("cBatch").value, count: $("cCount").value, date: today() },
     () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; updateBatchOptions(); });
 });
 
@@ -634,7 +631,6 @@ document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click
   document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
 }));
 
-setDate("cDate", today());
 fillSelects();
 load();
 </script>
