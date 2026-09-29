@@ -539,7 +539,8 @@ function renderDashboard() {
 
 function fillSelects() {
   const opts = (arr, ph) => `<option value="">${ph}</option>` + arr.map(x => `<option>${esc(x)}</option>`).join("");
-  [["pName", "Select flavour", state.flavours], ["cProd", "Select flavour", state.flavours],
+  const flavoursSorted = [...state.flavours].sort((a, b) => a.localeCompare(b));
+  [["pName", "Select flavour", flavoursSorted], ["cProd", "Select flavour", flavoursSorted],
    ["pType", "Select type", state.types], ["cType", "Select type", state.types]].forEach(([id, ph, arr]) => {
     const el = $(id), v = el.value; el.innerHTML = opts(arr, ph); el.value = v;
   });
