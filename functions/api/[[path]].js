@@ -16,7 +16,8 @@ const TYPES = ['Mini Pack', 'Family Pack'];
 const FLAVOURS = [
   'Sitafal', 'Mango', 'Tender Coconut', 'Strawberry', 'Chilli Guava', 'Jamun', 'Chikoo', 'Jackfruits',
   'Blue Berry', 'Black Currant', 'Lychee', 'Candied Fruits', 'Muskmelon', 'Roasted Almond', 'Rajbhog',
-  'Anjir', 'Coffee Walnut', 'Choco Almond', 'Chocolate', 'Chocochips', 'Dalgona Coffee', 'Vanilla'
+  'Anjir', 'Coffee Walnut', 'Choco Almond', 'Chocolate', 'Chocochips', 'Dalgona Coffee', 'Vanilla',
+  'Butterscotch', 'Biscoff', 'Oreo', 'Mango SF', 'Chocolate SF'
 ];
 // --------------------------------------------------------------------------
 
