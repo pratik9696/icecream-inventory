@@ -227,6 +227,17 @@
     </div>
 
     <div class="dash-card">
+      <h2>Low Inventory</h2>
+      <div class="table-scroll" id="lowInventoryTableWrap" hidden>
+        <table class="flavour-table">
+          <thead><tr><th>Flavour</th><th>Family</th><th>Mini</th></tr></thead>
+          <tbody id="lowInventoryBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="lowInventoryEmpty">Nothing below safety stock 🎉</div>
+    </div>
+
+    <div class="dash-card">
       <h2>Flavour status</h2>
       <div class="table-scroll">
         <table class="flavour-table">
@@ -509,22 +520,38 @@ function renderDashboard() {
     return `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · expires ${niceDate(expiryOf(p))} · ${stockOf(p)} units</small></div><span class="tag soon">${days}d left</span></div>`;
   }).join("") : '<div class="empty">Nothing expiring soon.</div>';
 
-  $("flavourTableBody").innerHTML = [...state.flavours].sort((a, b) => a.localeCompare(b)).map(f => {
+  const liveCellClass = (n, min) => n === 0 ? "" : (n >= min ? "cell-good" : "cell-warn");
+  const expCellClass = n => n === 0 ? "" : "cell-bad";
+
+  const flavourStats = [...state.flavours].sort((a, b) => a.localeCompare(b)).map(f => {
     const rows = products.filter(p => p.product === f);
     const bucket = (type, live) => rows
       .filter(p => p.type === type && (daysLeft(expiryOf(p), t) >= 0) === live)
       .reduce((s, p) => s + stockOf(p), 0);
-    const famLive = bucket("Family Pack", true), famExp = bucket("Family Pack", false);
-    const minLive = bucket("Mini Pack", true), minExp = bucket("Mini Pack", false);
-    return `<tr>
-      <td>${esc(f)}</td>
-      <td class="${famLive >= MIN_FAMILY ? "cell-good" : "cell-warn"}">${famLive}</td>
-      <td class="${famExp > 0 ? "cell-bad" : "cell-good"}">${famExp}</td>
-      <td class="${minLive >= MIN_MINI ? "cell-good" : "cell-warn"}">${minLive}</td>
-      <td class="${minExp > 0 ? "cell-bad" : "cell-good"}">${minExp}</td>
-      <td class="total">${famLive + minLive}</td>
-    </tr>`;
-  }).join("");
+    return {
+      flavour: f,
+      famLive: bucket("Family Pack", true), famExp: bucket("Family Pack", false),
+      minLive: bucket("Mini Pack", true), minExp: bucket("Mini Pack", false)
+    };
+  });
+
+  const lowStock = flavourStats.filter(s => s.famLive <= MIN_FAMILY || s.minLive <= MIN_MINI);
+  $("lowInventoryEmpty").hidden = lowStock.length > 0;
+  $("lowInventoryTableWrap").hidden = lowStock.length === 0;
+  $("lowInventoryBody").innerHTML = lowStock.map(s => `<tr>
+      <td>${esc(s.flavour)}</td>
+      <td class="${liveCellClass(s.famLive, MIN_FAMILY)}">${s.famLive}</td>
+      <td class="${liveCellClass(s.minLive, MIN_MINI)}">${s.minLive}</td>
+    </tr>`).join("");
+
+  $("flavourTableBody").innerHTML = flavourStats.map(s => `<tr>
+      <td>${esc(s.flavour)}</td>
+      <td class="${liveCellClass(s.famLive, MIN_FAMILY)}">${s.famLive}</td>
+      <td class="${expCellClass(s.famExp)}">${s.famExp}</td>
+      <td class="${liveCellClass(s.minLive, MIN_MINI)}">${s.minLive}</td>
+      <td class="${expCellClass(s.minExp)}">${s.minExp}</td>
+      <td class="total">${s.famLive + s.minLive}</td>
+    </tr>`).join("");
 
   const byFlavour = sumBy(products, p => p.product, stockOf).slice(0, 8);
   $("flavourBars").innerHTML = byFlavour.length ? barRows(byFlavour) : '<div class="empty">No products yet.</div>';
