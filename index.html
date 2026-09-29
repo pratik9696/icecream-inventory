@@ -198,6 +198,11 @@
 
   <!-- DASHBOARD -->
   <section id="dashboard">
+    <div class="dash-card">
+      <h2>Expiring Today</h2>
+      <div id="todayList"><div class="empty">Nothing expires today.</div></div>
+    </div>
+
     <div class="stats-grid">
       <div class="stat-tile"><div class="stat-label">Flavours tracked</div><div class="stat-value" id="statFlavours">0</div></div>
       <div class="stat-tile"><div class="stat-label">Units in stock</div><div class="stat-value" id="statUnits">0</div></div>
@@ -459,6 +464,11 @@ function renderDashboard() {
   // returned/disposed batches are no longer live inventory - excluded from
   // every stat/chart below, the same way they're excluded from the Expired list
   const products = state.products.filter(p => (p.status || "active") === "active");
+
+  const expiringToday = products.filter(p => daysLeft(expiryOf(p), t) === 0);
+  $("todayList").innerHTML = expiringToday.length ? expiringToday.map(p =>
+    `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · batch ${niceDate(p.manufacturing)} · ${stockOf(p)} units</small></div><span class="tag soon">Today</span></div>`
+  ).join("") : '<div class="empty">Nothing expires today.</div>';
 
   $("statFlavours").textContent = products.length;
   $("statUnits").textContent = products.reduce((s, p) => s + stockOf(p), 0);
