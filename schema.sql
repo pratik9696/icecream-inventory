@@ -27,3 +27,43 @@ CREATE TABLE IF NOT EXISTS inventory (
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_batch ON inventory(product, type, manufacturing);
+
+-- Daily count sessions: staff "open" the daily count, count every batch, then
+-- "close" it. One row per calendar date; closed_at NULL means currently open.
+CREATE TABLE IF NOT EXISTS count_sessions (
+  date TEXT PRIMARY KEY,         -- yyyy-mm-dd
+  opened_at TEXT NOT NULL,
+  closed_at TEXT
+);
+
+-- One row per daily-count entry (the log). inventory still holds the stock
+-- itself; this records what was counted, against what stock, in which session.
+-- in_session = 0 marks legacy rows backfilled from inventory - they show in the
+-- log but never count as "already counted" in a session.
+CREATE TABLE IF NOT EXISTS count_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  count_date TEXT NOT NULL,
+  product TEXT NOT NULL,
+  type TEXT NOT NULL,
+  manufacturing TEXT NOT NULL,
+  stock_before INTEGER,
+  counted INTEGER NOT NULL,
+  logged_at TEXT NOT NULL,
+  in_session INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_count_log_date ON count_log(count_date);
+
+-- One row per store load, so several loads of the same batch on one day are
+-- all kept (inventory itself only keeps one row per batch per day).
+CREATE TABLE IF NOT EXISTS store_loads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  load_date TEXT NOT NULL,
+  product TEXT NOT NULL,
+  type TEXT NOT NULL,
+  manufacturing TEXT NOT NULL,
+  qty INTEGER NOT NULL,
+  stock_before INTEGER NOT NULL,
+  stock_after INTEGER NOT NULL,
+  logged_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_store_loads_date ON store_loads(load_date);

@@ -130,6 +130,17 @@
   .cell-good{background:var(--green-soft);color:var(--green-dark);border-radius:8px;font-weight:600}
   .cell-warn{background:#fdebc4;color:var(--warn);border-radius:8px;font-weight:600}
   .cell-bad{background:#fbd3d8;color:var(--bad);border-radius:8px;font-weight:600}
+
+  form fieldset{border:0;padding:0;margin:0;min-width:0}
+  form fieldset:disabled{opacity:.55}
+  .field small.bad{color:var(--bad);font-weight:600}
+  .session-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px}
+  .session-card .session-info{margin-bottom:12px}
+  .session-card .session-info b{display:block;font:600 17px "Fredoka",system-ui,sans-serif;color:var(--green-dark)}
+  .session-card .session-info small{color:var(--muted);font-size:13px}
+  .session-card.open{border-color:var(--green)}
+  .go.alt{background:#fff;color:var(--green-dark);border:2px solid var(--green)}
+  .group-label{margin:12px 0 2px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -181,19 +192,23 @@
 
   <!-- COUNTS -->
   <section id="counts" class="on">
+    <div class="session-card" id="sessionBar"></div>
     <form id="cForm">
       <h2>Record stock count</h2>
-      <div class="field"><label for="cProd">Flavour</label>
-        <select id="cProd" required></select></div>
-      <div class="field"><label for="cType">Type</label>
-        <select id="cType" required></select></div>
-      <div class="field" id="cBatchField" hidden><label for="cBatch">Batch (manufacturing date)</label>
-        <select id="cBatch"></select></div>
-      <div class="field"><label for="cCount">Count</label>
-        <input id="cCount" type="number" inputmode="numeric" min="0" step="1" required></div>
-      <button class="go" type="submit">Save count</button>
+      <fieldset id="cFields" disabled>
+        <div class="field"><label for="cProd">Flavour</label>
+          <select id="cProd" required></select></div>
+        <div class="field"><label for="cType">Type</label>
+          <select id="cType" required></select></div>
+        <div class="field" id="cBatchField" hidden><label for="cBatch">Batch (manufacturing date)</label>
+          <select id="cBatch"></select></div>
+        <div class="field"><label for="cCount">Count</label>
+          <input id="cCount" type="number" inputmode="numeric" min="0" step="1" required>
+          <small id="cStockHint"></small></div>
+        <button class="go" type="submit">Save count</button>
+      </fieldset>
     </form>
-    <div class="list"><h2>Recent counts</h2><div id="cList"><div class="empty">Loading…</div></div></div>
+    <div class="list"><h2>Daily counts</h2><div id="cList"><div class="empty">Loading…</div></div></div>
   </section>
 
   <!-- STORE LOAD -->
@@ -211,6 +226,7 @@
         <small id="slStockHint"></small></div>
       <button class="go" type="submit">Deduct from inventory</button>
     </form>
+    <div class="list"><h2>Store loads</h2><div id="slList"><div class="empty">Loading…</div></div></div>
   </section>
 
   <!-- DASHBOARD -->
@@ -328,7 +344,7 @@ const MIN_MINI = 3;           // Mini Pack live units below this is flagged low
 const $ = id => document.getElementById(id);
 const FLAVOURS = ["Sitafal","Mango","Tender Coconut","Strawberry","Chilli Guava","Jamun","Chikoo","Jackfruits","Blue Berry","Black Currant","Lychee","Candied Fruits","Muskmelon","Roasted Almond","Rajbhog","Anjir","Coffee Walnut","Choco Almond","Chocolate","Chocochips","Dalgona Coffee","Vanilla","Butterscotch","Biscoff","Oreo","Mango SF","Chocolate SF"];
 const TYPES = ["Mini Pack","Family Pack"];
-let state = { flavours: FLAVOURS, types: TYPES, products: [], recent: [] };
+let state = { flavours: FLAVOURS, types: TYPES, products: [], counts: [], storeLoads: [], sessions: [] };
 let key = localStorage.getItem("iceKey") || "";
 
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -377,28 +393,96 @@ function render() {
      <div class="row-end">${tag}<button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this product">✕</button></div></div>`;
   }).join("") : '<div class="empty">No products yet. Add your first one above.</div>';
 
-  recentSorted = state.recent
-    .map((r, i) => [r, i])
-    .sort((a, b) => (b[0].date || "").localeCompare(a[0].date || "") || b[1] - a[1])
-    .map(([r]) => r);
-  $("cList").innerHTML = recentSorted.length ? recentSorted.map((r, i) =>
-    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · batch ${niceDate(r.manufacturing)} · ${niceDate(r.date)}</small></div>
-     <div class="row-end"><span class="tag">${esc(r.count)}</span><button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this count">✕</button></div></div>`
-  ).join("") : '<div class="empty">No counts yet.</div>';
-
-  updateBatchOptions();
+  renderCounts();
+  renderStoreLoads();
+  renderSession();
+  updateCountOptions();
   updateStoreLoadOptions();
   renderDashboard();
 }
-let recentSorted = [];
+
+// ---- daily count session + logs ----
+const isActive = p => (p.status || "active") === "active";
+const batchId = p => [p.product, p.type, p.manufacturing].join("|");
+const sessionToday = () => (state.sessions || []).find(s => s.date === today());
+const sessionOpen = () => { const s = sessionToday(); return !!s && !s.closed_at; };
+const countedToday = () => (state.counts || []).filter(c => c.date === today() && c.in_session);
+const stockedBatches = () => state.products.filter(p => isActive(p) && stockOf(p) > 0);
+// batches still to be counted in today's session: in stock, active, not yet counted
+const countable = () => { const done = new Set(countedToday().map(batchId)); return stockedBatches().filter(p => !done.has(batchId(p))); };
+
+let countsShown = [], loadsShown = [];
+
+function groupedRows(items, rowFn) {
+  const t = today();
+  const todays = items.filter(x => x.date === t), earlier = items.filter(x => x.date !== t);
+  const shown = [...todays, ...earlier];
+  let html = "", i = 0;
+  if (todays.length) html += `<h4 class="group-label">Today · ${todays.length}</h4>` + todays.map(x => rowFn(x, i++)).join("");
+  if (earlier.length) html += `<h4 class="group-label">Earlier</h4>` + earlier.map(x => rowFn(x, i++)).join("");
+  return { shown, html };
+}
+
+function renderCounts() {
+  const g = groupedRows(state.counts || [], (r, i) =>
+    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · batch ${niceDate(r.manufacturing)}${r.stock_before != null ? ` · stock ${r.stock_before} → ${r.count}` : ""} · ${niceDate(r.date)}</small></div>
+     <div class="row-end"><span class="tag">${esc(r.count)}</span><button type="button" class="del-btn" data-idx="${i}" aria-label="Delete this count">✕</button></div></div>`);
+  countsShown = g.shown;
+  $("cList").innerHTML = g.shown.length ? g.html : '<div class="empty">No counts yet.</div>';
+}
+
+function renderStoreLoads() {
+  const g = groupedRows(state.storeLoads || [], (r, i) =>
+    `<div class="row"><div><b>${esc(r.product)}</b><small>${esc(r.type)} · batch ${niceDate(r.manufacturing)} · stock ${r.stock_before} → ${r.stock_after} · ${niceDate(r.date)}</small></div>
+     <div class="row-end"><span class="tag">−${esc(r.qty)}</span><button type="button" class="del-btn" data-idx="${i}" aria-label="Undo this store load">✕</button></div></div>`);
+  loadsShown = g.shown;
+  $("slList").innerHTML = g.shown.length ? g.html : '<div class="empty">No store loads yet.</div>';
+}
+
+function renderSession() {
+  const s = sessionToday(), open = sessionOpen();
+  const done = countedToday().length, left = countable().length, total = done + left;
+  const bar = $("sessionBar");
+  bar.classList.toggle("open", open);
+  let info, btn;
+  if (open) {
+    info = `<b>Daily count is open</b><small>${left ? `${done} of ${total} batches counted · ${left} to go` : `All ${total} batches counted`}</small>`;
+    btn = `<button type="button" class="go alt" data-act="close">Close daily count</button>`;
+  } else if (s) {
+    info = `<b>Daily count is closed</b><small>${done} of ${total} batches counted today</small>`;
+    btn = `<button type="button" class="go alt" data-act="open">Re-open daily count</button>`;
+  } else {
+    info = `<b>Daily count not started</b><small>Open it to record today's stock counts</small>`;
+    btn = `<button type="button" class="go" data-act="open">Open daily count</button>`;
+  }
+  bar.innerHTML = `<div class="session-info">${info}</div>${btn}`;
+}
+
+$("sessionBar").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  const closing = b.dataset.act === "close";
+  if (closing) {
+    const left = countable().length;
+    if (left && !(await askConfirm(`Close daily count?\n\n${left} batch${left === 1 ? " has" : "es have"} not been counted and will keep the current stock.`, "Close"))) return;
+  }
+  showLoading(closing ? "Closing…" : "Opening…");
+  try {
+    const d = await api({ action: closing ? "closeCount" : "openCount", date: today() });
+    toast(d.message);
+    applyData(d);
+  } catch (err) { toast(err.message, true); }
+  finally { hideLoading(); }
+});
 
 let loadingCount = 0;
 function showLoading(msg) { $("loadingMsg").textContent = msg || "Saving…"; loadingCount++; $("loadingBack").hidden = false; }
 function hideLoading() { loadingCount = Math.max(0, loadingCount - 1); if (!loadingCount) $("loadingBack").hidden = true; }
 
-function askConfirm(msg) {
+function askConfirm(msg, okLabel) {
   return new Promise(resolve => {
     $("confirmMsg").textContent = msg;
+    $("confirmOk").textContent = okLabel || "Delete";
     $("confirmBack").hidden = false;
     const done = v => { $("confirmBack").hidden = true; $("confirmOk").removeEventListener("click", onOk); $("confirmCancel").removeEventListener("click", onCancel); resolve(v); };
     const onOk = () => done(true), onCancel = () => done(false);
@@ -412,15 +496,31 @@ async function deleteCount(r) {
   if (!ok) return;
   showLoading("Deleting…");
   try {
-    const d = await api({ action: "deleteCount", ...r });
+    const d = await api({ action: "deleteCount", id: r.id });
     toast(d.message || "Deleted");
-    d.recent ? applyData(d) : await load();
+    d.counts ? applyData(d) : await load();
   } catch (e) { toast(e.message, true); }
   finally { hideLoading(); }
 }
 $("cList").addEventListener("click", e => {
   const b = e.target.closest(".del-btn");
-  if (b) deleteCount(recentSorted[+b.dataset.idx]);
+  if (b) deleteCount(countsShown[+b.dataset.idx]);
+});
+
+async function deleteStoreLoad(r) {
+  const ok = await askConfirm(`Undo this store load?\n\n${r.product} · ${r.type} (batch: ${niceDate(r.manufacturing)})\n${niceDate(r.date)} · ${r.qty} units go back into stock`, "Undo");
+  if (!ok) return;
+  showLoading("Undoing…");
+  try {
+    const d = await api({ action: "deleteStoreLoad", id: r.id });
+    toast(d.message || "Undone");
+    d.storeLoads ? applyData(d) : await load();
+  } catch (e) { toast(e.message, true); }
+  finally { hideLoading(); }
+}
+$("slList").addEventListener("click", e => {
+  const b = e.target.closest(".del-btn");
+  if (b) deleteStoreLoad(loadsShown[+b.dataset.idx]);
 });
 
 async function deleteProduct(p) {
@@ -585,34 +685,60 @@ function renderDashboard() {
 function fillSelects() {
   const opts = (arr, ph) => `<option value="">${ph}</option>` + arr.map(x => `<option>${esc(x)}</option>`).join("");
   const flavoursSorted = [...state.flavours].sort((a, b) => a.localeCompare(b));
-  [["pName", "Select flavour", flavoursSorted], ["cProd", "Select flavour", flavoursSorted], ["slProd", "Select flavour", flavoursSorted],
-   ["pType", "Select type", state.types], ["cType", "Select type", state.types], ["slType", "Select type", state.types]].forEach(([id, ph, arr]) => {
+  [["pName", "Select flavour", flavoursSorted], ["pType", "Select type", state.types]].forEach(([id, ph, arr]) => {
     const el = $(id), v = el.value; el.innerHTML = opts(arr, ph); el.value = v;
   });
 }
 
-// a flavour+type can have several batches (manufacturing dates) in flight at
-// once; show a batch picker only when there's genuinely more than one to
-// choose from, so the common single-batch case stays exactly as fast as before
-function updateBatchOptionsFor(prodId, typeId, fieldId, batchId) {
-  const product = $(prodId).value, type = $(typeId).value;
-  const batches = state.products
-    .filter(p => p.product === product && p.type === type && (p.status || "active") === "active")
+// Cascading pickers over an eligible-batch list: the flavour list holds only
+// flavours with an eligible batch, the type list only types that flavour still
+// has, and the batch picker appears only when 2+ batches remain to choose from.
+function refreshPickers(prodId, typeId, fieldId, batchId, list) {
+  const pSel = $(prodId), tSel = $(typeId), bSel = $(batchId);
+  const flavours = [...new Set(list.map(p => p.product))].sort((a, b) => a.localeCompare(b));
+  const pv = pSel.value;
+  pSel.innerHTML = `<option value="">Select flavour</option>` + flavours.map(f => `<option>${esc(f)}</option>`).join("");
+  pSel.value = flavours.includes(pv) ? pv : "";
+
+  const types = state.types.filter(t => list.some(p => (!pSel.value || p.product === pSel.value) && p.type === t));
+  const tv = tSel.value;
+  tSel.innerHTML = `<option value="">Select type</option>` + types.map(t => `<option>${esc(t)}</option>`).join("");
+  tSel.value = types.includes(tv) ? tv : "";
+
+  const batches = list.filter(p => p.product === pSel.value && p.type === tSel.value)
     .sort((a, b) => a.manufacturing.localeCompare(b.manufacturing));
-  const sel = $(batchId);
-  const prev = sel.value;
-  sel.innerHTML = batches.map(p => `<option value="${esc(p.manufacturing)}">${esc(niceDate(p.manufacturing))} · ${stockOf(p)} units</option>`).join("");
-  if (batches.some(p => p.manufacturing === prev)) sel.value = prev;
+  const bv = bSel.value;
+  bSel.innerHTML = batches.map(p => `<option value="${esc(p.manufacturing)}">${esc(niceDate(p.manufacturing))} · ${stockOf(p)} units</option>`).join("");
+  if (batches.some(p => p.manufacturing === bv)) bSel.value = bv;
   $(fieldId).hidden = batches.length <= 1;
 }
-function updateBatchOptions() { updateBatchOptionsFor("cProd", "cType", "cBatchField", "cBatch"); }
-["cProd", "cType"].forEach(id => $(id).addEventListener("change", updateBatchOptions));
+const selectedBatch = (prodId, typeId, batchId) =>
+  state.products.find(p => p.product === $(prodId).value && p.type === $(typeId).value && p.manufacturing === $(batchId).value);
 
-function currentSlBatch() {
-  return state.products.find(p => p.product === $("slProd").value && p.type === $("slType").value && p.manufacturing === $("slBatch").value);
+function updateCountOptions() {
+  const open = sessionOpen();
+  refreshPickers("cProd", "cType", "cBatchField", "cBatch", open ? countable() : []);
+  $("cFields").disabled = !open;
+  updateCountHint();
 }
+function updateCountHint() {
+  const p = selectedBatch("cProd", "cType", "cBatch"), el = $("cStockHint"), n = $("cCount").value;
+  if (!p) { el.textContent = ""; el.className = ""; return; }
+  const stock = stockOf(p);
+  if (n !== "" && Number(n) > stock) {
+    el.textContent = `Incorrect count — higher than current inventory (${stock} units). Inward needs to be updated.`;
+    el.className = "bad";
+  } else {
+    el.textContent = `Current stock: ${stock} units`;
+    el.className = "";
+  }
+}
+["cProd", "cType", "cBatch"].forEach(id => $(id).addEventListener("change", updateCountOptions));
+$("cCount").addEventListener("input", updateCountHint);
+
+const currentSlBatch = () => selectedBatch("slProd", "slType", "slBatch");
 function updateStoreLoadOptions() {
-  updateBatchOptionsFor("slProd", "slType", "slBatchField", "slBatch");
+  refreshPickers("slProd", "slType", "slBatchField", "slBatch", stockedBatches());
   const p = currentSlBatch();
   $("slStockHint").textContent = p ? `Current stock: ${stockOf(p)} units` : "";
 }
@@ -624,7 +750,7 @@ async function submit(form, payload, okReset, msg) {
   try {
     const d = await api(payload);
     toast(msg || d.message); okReset();
-    d.recent ? applyData(d) : await load();
+    d.counts ? applyData(d) : await load();
   } catch (e) { toast(e.message, true); }
   hideLoading();
   btn.disabled = false;
@@ -679,27 +805,25 @@ $("pForm").addEventListener("submit", e => {
 
 $("cForm").addEventListener("submit", e => {
   e.preventDefault();
-  if (!$("cBatch").value) return toast("Add " + $("cProd").value + " (" + $("cType").value + ") under Inward first", true);
-  submit(e.target, { action: "addCount", product: $("cProd").value, type: $("cType").value, manufacturing: $("cBatch").value, count: $("cCount").value, date: today() },
-    () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; updateBatchOptions(); });
+  const batch = selectedBatch("cProd", "cType", "cBatch");
+  if (!batch) return toast("Pick a flavour and type that still need counting", true);
+  const n = Number($("cCount").value), stock = stockOf(batch);
+  if (n > stock) return toast(`Incorrect count — ${n} is higher than current inventory (${stock}). Inward needs to be updated.`, true);
+  submit(e.target, { action: "addCount", product: batch.product, type: batch.type, manufacturing: batch.manufacturing, count: $("cCount").value, date: today() },
+    () => { $("cCount").value = ""; $("cProd").value = ""; $("cType").value = ""; });
 });
 
-// a store load reuses the same "save today's count" mechanism as Daily count -
-// it just computes what that count should be (current stock minus the load)
-// instead of asking the user to re-enter an absolute number. If a Daily count
-// is logged later the same day, that physical recount wins (same-day upsert),
-// exactly like two Daily counts on the same day would.
+// a store load is its own logged event (Store loads list) that also lowers
+// current stock; the backend writes today's stock row and mirrors it to the
+// Sheet as a normal count, so dashboards and the Sheet see the new stock
 $("slForm").addEventListener("submit", e => {
   e.preventDefault();
-  if (!$("slBatch").value) return toast("Add " + $("slProd").value + " (" + $("slType").value + ") under Inward first", true);
   const batch = currentSlBatch();
-  const loadAmount = Number($("slCount").value);
-  const currentStock = stockOf(batch);
+  if (!batch) return toast("Pick a flavour and type that are in stock", true);
+  const loadAmount = Number($("slCount").value), currentStock = stockOf(batch);
   if (loadAmount > currentStock) return toast(`Not enough stock: only ${currentStock} units available`, true);
-  const newStock = currentStock - loadAmount;
-  submit(e.target, { action: "addCount", product: $("slProd").value, type: $("slType").value, manufacturing: $("slBatch").value, count: String(newStock), date: today() },
-    () => { $("slCount").value = ""; $("slProd").value = ""; $("slType").value = ""; updateStoreLoadOptions(); },
-    `Loaded ${loadAmount} · ${newStock} units left`);
+  submit(e.target, { action: "addStoreLoad", product: batch.product, type: batch.type, manufacturing: batch.manufacturing, qty: $("slCount").value, date: today() },
+    () => { $("slCount").value = ""; $("slProd").value = ""; $("slType").value = ""; });
 });
 
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
