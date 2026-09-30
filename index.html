@@ -597,7 +597,7 @@ function fillSelects() {
 function updateBatchOptionsFor(prodId, typeId, fieldId, batchId) {
   const product = $(prodId).value, type = $(typeId).value;
   const batches = state.products
-    .filter(p => p.product === product && p.type === type)
+    .filter(p => p.product === product && p.type === type && (p.status || "active") === "active")
     .sort((a, b) => a.manufacturing.localeCompare(b.manufacturing));
   const sel = $(batchId);
   const prev = sel.value;
