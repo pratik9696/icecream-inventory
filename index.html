@@ -494,7 +494,7 @@ function renderDashboard() {
   // every stat/chart below, the same way they're excluded from the Expired list
   const products = state.products.filter(p => (p.status || "active") === "active");
 
-  const expiringToday = products.filter(p => daysLeft(expiryOf(p), t) === 0);
+  const expiringToday = products.filter(p => stockOf(p) > 0 && daysLeft(expiryOf(p), t) === 0);
   $("todayList").innerHTML = expiringToday.length ? expiringToday.map(p =>
     `<div class="row"><div><b>${esc(p.product)}</b><small>${esc(p.type)} · batch ${niceDate(p.manufacturing)} · ${stockOf(p)} units</small></div><span class="tag soon">Today</span></div>`
   ).join("") : '<div class="empty">Nothing expires today.</div>';
@@ -532,7 +532,7 @@ function renderDashboard() {
   }).join("") : '<div class="empty">Nothing expired 🎉</div>';
 
   const soonest = products
-    .filter(p => { const d = daysLeft(expiryOf(p), t); return d >= 0 && d <= 7; })
+    .filter(p => { const d = daysLeft(expiryOf(p), t); return stockOf(p) > 0 && d >= 0 && d <= 7; })
     .sort((a, b) => daysLeft(expiryOf(a), t) - daysLeft(expiryOf(b), t) || stockOf(b) - stockOf(a))
     .slice(0, 10);
   $("attnList").innerHTML = soonest.length ? soonest.map(p => {
